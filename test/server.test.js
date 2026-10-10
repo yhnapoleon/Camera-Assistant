@@ -1,0 +1,127 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { once } from 'node:events';
+import { EventEmitter } from 'node:events';
+import WebSocket from 'ws';
+import sharp from 'sharp';
+import { createApp } from '../src/server.js';
+
+test('authenticated phone can upload a batch and ask; unauthenticated access is rejected', async t => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), 'camera-study-test-'));
+  const p = { prepare: async f => ({ digest: f.id }), analyze: async () => '这是一页题目', answer: async () => '第一题答案 A，解析如下。' };
+  const app = createApp({ dataDir, token: 'test-token', provider: p, source: 'camera' });
+  app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  t.after(async () => { await app.close(); rmSync(dataDir, { recursive: true, force: true }); });
+  assert.equal((await fetch(`${base}/api/state`)).status, 401);
+  const ws = new WebSocket(base.replace('http', 'ws'));
+  const events = []; ws.on('message', d => events.push(JSON.parse(d)));
+  await once(ws, 'open'); ws.send(JSON.stringify({ type: 'hello', token: 'test-token' }));
+  const wait = async type => { for (let i = 0; i < 100; i++) { const e = events.find(e => e.type === type); if (e) return e; await new Promise(r => setTimeout(r, 10)); } throw Error(`Missing ${type}`); };
+  const hello = await wait('hello');
+  ws.send(JSON.stringify({ type: 'command', text: '拍摄' }));
+  const capture = await wait('capture');
+  const png = await sharp({ create: { width: 20, height: 20, channels: 3, background: 'white' } }).png().toBuffer();
+  const headers = { Authorization: 'Bearer test-token', 'X-Client-Id': hello.clientId, 'Content-Type': 'image/png' };
+  const upload = await fetch(`${base}/api/frame?batchId=${capture.batch.id}&frameId=frame-1`, { method: 'POST', headers, body: png });
+  assert.equal(upload.status, 200);
+  const repeat = await fetch(`${base}/api/frame?batchId=${capture.batch.id}&frameId=frame-1`, { method: 'POST', headers, body: png });
+  assert.equal(repeat.status, 200);
+  ws.send(JSON.stringify({ type: 'finish', batchId: capture.batch.id }));
+  await wait('batch.complete');
+  ws.send(JSON.stringify({ type: 'question', text: '这一页的答案和解析' }));
+  const answer = await wait('answer'); assert.match(answer.results[0].text, /答案 A/);
+  assert.equal(app.engine.state.frames.length, 1);
+  assert.equal((await fetch(`${base}/api/config`, { headers })).status, 200);
+  assert.equal((await fetch(`${base}/api/speech`, { method: 'POST', headers, body: JSON.stringify({ text: '测试' }) })).status, 503);
+  ws.close();
+});
+
+test('Windows source receives commands and uploads a fixed-region frame into the same pipeline', async t => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), 'camera-remote-test-'));
+  const p = { prepare: async f => ({ digest: f.id }), analyze: async () => '屏幕题目', answer: async () => '屏幕题目解析' };
+  const app = createApp({ dataDir, token: 'test-token', provider: p }); app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
+  t.after(async () => { await app.close(); rmSync(dataDir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${app.server.address().port}`, headers = { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' };
+  const registration = await (await fetch(`${base}/api/source/register`, { method: 'POST', headers, body: JSON.stringify({ name: 'Test Windows PC' }) })).json();
+  const sourceHeaders = { ...headers, 'X-Client-Id': registration.clientId };
+  const ws = new WebSocket(base.replace('http', 'ws')); const events = []; ws.on('message', d => events.push(JSON.parse(d)));
+  await once(ws, 'open'); ws.send(JSON.stringify({ type: 'hello', token: 'test-token' }));
+  const wait = async type => { for (let i = 0; i < 100; i++) { const e = events.find(e => e.type === type); if (e) return e; await new Promise(r => setTimeout(r, 10)); } throw Error(`Missing ${type}`); };
+  await wait('hello'); ws.send(JSON.stringify({ type: 'command', text: '拍摄' })); await wait('remote.capture');
+  const { command } = await (await fetch(`${base}/api/source/poll`, { headers: sourceHeaders })).json(); assert.equal(command.batch.mode, 'single');
+  const png = await sharp({ create: { width: 30, height: 20, channels: 3, background: 'white' } }).png().toBuffer();
+  assert.equal((await fetch(`${base}/api/frame?batchId=${command.batch.id}&frameId=screen-1`, { method: 'POST', headers: sourceHeaders, body: png })).status, 200);
+  await fetch(`${base}/api/source/finish`, { method: 'POST', headers: sourceHeaders, body: JSON.stringify({ batchId: command.batch.id }) });
+  const complete = await wait('batch.complete'); assert.equal(complete.failed, 0); assert.equal(complete.incomplete, false);
+  await fetch(`${base}/api/source/poll?ack=${command.id}`, { headers: sourceHeaders });
+  ws.send(JSON.stringify({ type: 'question', text: '这一页答案' }));
+  let question;
+  for (let i = 0; i < 50; i++) { question = (await (await fetch(`${base}/api/source/poll`, { headers: sourceHeaders })).json()).command; if (question) break; await new Promise(r => setTimeout(r, 10)); }
+  assert.equal(question.type, 'question');
+  await fetch(`${base}/api/source/question`, { method: 'POST', headers: sourceHeaders, body: JSON.stringify(question) });
+  const answer = await wait('answer'); assert.equal(answer.results[0].text, '屏幕题目解析'); ws.close();
+});
+
+test('stale STT session cannot trigger capture after listening is disabled', async t => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), 'camera-stt-test-')); const remotes = [];
+  const p = { prepare: async () => ({}), analyze: async () => '', answer: async () => '' };
+  const app = createApp({ dataDir, token: 'test-token', provider: p, apiKey: 'fake-key', source: 'camera', openSTT: () => { const r = new EventEmitter(); r.send = () => {}; r.close = () => {}; r.readyState = 1; remotes.push(r); return r; } });
+  app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
+  t.after(async () => { await app.close(); rmSync(dataDir, { recursive: true, force: true }); });
+  const ws = new WebSocket(`ws://127.0.0.1:${app.server.address().port}`); await once(ws, 'open');
+  ws.send(JSON.stringify({ type: 'hello', token: 'test-token' })); ws.send(JSON.stringify({ type: 'listen' }));
+  for (let i = 0; i < 30 && !remotes.length; i++) await new Promise(r => setTimeout(r, 10));
+  assert.equal(remotes.length, 1);
+  ws.send(JSON.stringify({ type: 'unlisten' })); await new Promise(r => setTimeout(r, 30));
+  remotes[0].emit('message', Buffer.from(JSON.stringify({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'stale', transcript: '拍摄' })));
+  assert.equal(app.engine.state.batches.length, 0); ws.close();
+});
+test('disconnecting a TTS response aborts upstream generation and releases the slot', async t => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), 'camera-tts-test-')); let upstreamSignal, calls = 0;
+  const app = createApp({ dataDir, token: 'test-token', provider: {}, apiKey: 'fake', speechFetch: async (_url, options) => {
+    calls++; if (calls > 1) return new Response(new Uint8Array([1, 2, 3]));
+    upstreamSignal = options.signal;
+    return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(Error('aborted')), { once: true }));
+  } });
+  app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
+  t.after(async () => { await app.close(); rmSync(dataDir, { recursive: true, force: true }); });
+  const uri = `http://127.0.0.1:${app.server.address().port}/api/speech`;
+  const options = { method: 'POST', headers: { Authorization: 'Bearer test-token' }, body: JSON.stringify({ text: '测试' }) };
+  const controller = new AbortController(); const request = fetch(uri, { ...options, signal: controller.signal }).catch(() => {});
+  for (let i = 0; i < 30 && !upstreamSignal; i++) await new Promise(r => setTimeout(r, 10));
+  assert.ok(upstreamSignal); controller.abort(); await request;
+  for (let i = 0; i < 30 && !upstreamSignal.aborted; i++) await new Promise(r => setTimeout(r, 10));
+  assert.equal(upstreamSignal.aborted, true);
+  assert.equal((await fetch(uri, options)).status, 200);
+});
+
+test('settings persist and remote region/exit commands are validated and queued', async t => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), 'camera-settings-test-'));
+  const p = { prepare: async () => ({}), analyze: async () => '', answer: async () => '' };
+  let app = createApp({ dataDir, token: 'test-token', provider: p });
+  app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
+  t.after(async () => { await app.close(); rmSync(dataDir, { recursive:true, force:true }); });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const headers = { Authorization: 'Bearer test-token', 'Content-Type':'application/json' };
+  const post = (url, data) => fetch(base + url, { method:'POST', headers, body:JSON.stringify(data) });
+  assert.equal((await post('/api/settings', {systemPrompt:'背景：逐题解释'})).status, 200);
+  assert.equal((await (await fetch(base + '/api/settings', {headers})).json()).systemPrompt, '背景：逐题解释');
+  assert.equal((await post('/api/settings', {systemPrompt:42})).status, 400);
+  const registration = await (await post('/api/source/register', {name:'Windows'})).json();
+  assert.equal((await post('/api/source/control', {type:'region', region:{x:0,y:0,width:-1,height:100}})).status, 400);
+  assert.equal((await post('/api/source/control', {type:'region', region:{x:-1920,y:0,width:1200,height:800}})).status, 200);
+  const pollHeaders = {...headers, 'X-Client-Id':registration.clientId};
+  const region = (await (await fetch(base + '/api/source/poll', {headers:pollHeaders})).json()).command;
+  assert.equal(region.region.x, -1920);
+  await fetch(base + '/api/source/poll?ack=' + region.id, {headers:pollHeaders});
+  assert.equal((await post('/api/source/control', {type:'exit'})).status, 200);
+  assert.equal((await (await fetch(base + '/api/source/poll', {headers:pollHeaders})).json()).command.type, 'exit');
+  await app.close();
+  app = createApp({dataDir,token:'test-token',provider:p});
+  assert.equal(app.engine.state.systemPrompt, '背景：逐题解释');
+  app.server.listen(0, '127.0.0.1'); await once(app.server,'listening');
+});

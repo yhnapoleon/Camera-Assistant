@@ -1,0 +1,7 @@
+node_modules/
+.env
+data/
+certs/
+*.log
+# A packed copy of collect/ for carrying to the capture PC; it holds run logs.
+collect.zip

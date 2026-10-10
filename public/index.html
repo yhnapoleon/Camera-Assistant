@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f4f5ef"><title>拾页 · 相机学习助手</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+<header><a class="brand" href="/">拾页<span>CAMERA NOTES</span></a><span class="connection" id="connection">未连接</span></header>
+<main>
+  <section class="intro"><div><p class="eyebrow">看见 · 整理 · 再提问</p><h1>先收集，<br>答案稍后再说。</h1><p class="subtitle">用声音控制拍摄。后台安静整理，完成时轻响一声。</p></div><div class="session-card"><label for="pair">电脑配对码</label><input id="pair" type="password" autocomplete="off" placeholder="粘贴电脑终端中的配对码"><button id="connect" class="primary">连接会话 <span>↗</span></button><small id="modelInfo">手机和电脑连接后即可开始</small></div></section>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <div class="source-row"><button id="checkPairing">检测配对</button><span id="pairingResult" role="status" aria-live="polite">连接会话后，可检测采集端是否响应</span></div>
+  <section class="answers-panel"><details><summary>任务背景 / System Prompt</summary><p class="hint">用于静默整理和提问。保存后用于新批次和新问题，已开始的任务保持原设置。</p><textarea id="systemPrompt" rows="5" maxlength="12000" placeholder="例如：这是高中数学复习。保留完整题干和图形条件；回答时先给答案，再按步骤解释。"></textarea><button id="savePrompt">保存任务背景</button><span id="promptStatus"></span></details></section>
+  <div class="workspace">
+    <section class="capture-panel">
+      <div class="section-title"><h2>采集画面</h2><span id="captureStatus">等待开始</span></div>
+      <div class="source-row"><select id="sourceSelect" aria-label="图片来源"><option value="screen">远程电脑屏幕</option><option value="camera">本机 / 手机摄像头</option></select><span id="sourceStatus">等待屏幕采集器连接</span></div>
+      <details><summary>远程截图区域与采集器</summary><p class="hint">默认整个桌面。坐标使用目标电脑的物理像素；先停止采集，再应用。副屏可使用负坐标。</p><div class="region-fields"><label>X<input id="regionX" type="number" value="0"></label><label>Y<input id="regionY" type="number" value="0"></label><label>宽<input id="regionWidth" type="number" value="1200" min="1"></label><label>高<input id="regionHeight" type="number" value="800" min="1"></label></div><button id="applyRegion">应用截图区域</button><button id="exitAgent">退出远程采集器</button></details>
+      <div class="viewfinder"><video id="camera" autoplay muted playsinline></video><img id="screenPreview" alt="最近一次固定区域截图" hidden><div class="camera-empty" id="cameraEmpty"><div class="camera-icon">⌗</div><p id="sourceHint">在另一台 Windows 电脑启动采集器，框选区域</p><button id="cameraOn" hidden>打开摄像头</button></div><span class="view-label" id="viewLabel">固定区域截图 · 最新画面预览</span><span class="live-dot" id="liveDot" hidden>● 拍摄中</span></div>
+      <div class="capture-controls"><button data-command="拍"><b>拍</b><small>立即拍一张</small></button><button data-command="启动"><b>启动</b><small>1 秒 / 张 · 共 5 张</small></button><button data-command="长程"><b>长程</b><small>持续每秒拍摄</small></button><button id="stop" class="stop"><b>停止</b><small>结束本批采集</small></button></div>
+      <div class="mic-row"><button id="listen">开启语音监听</button><span id="micStatus">麦克风未开启</span><label class="upload">或上传图片<input id="files" type="file" accept="image/*" multiple></label></div>
+      <div class="transcript"><span>听到的话</span><p id="transcript">说“拍”采集，“答案”回答当前页，“全部答案”回答尚未作答的图片。</p></div>
+      <form id="commandForm" class="inline-form"><input id="commandText" aria-label="文字指令" placeholder="输入：拍 / 答案 / 全部答案"><button>发送</button></form>
+      <p class="hint">保持亮屏与页面前台。语音回答由 AI 合成；嘈杂环境或扬声器回声较大时建议使用耳机。</p>
+    </section>
+    <section class="memory-panel">
+      <div class="section-title"><h2>本次收集</h2><span>静默整理</span></div>
+      <div class="metrics"><div><strong id="total">0</strong><span>已采集</span></div><div><strong id="processed">0</strong><span>已处理</span></div><div><strong id="pending">0</strong><span>等待中</span></div></div>
+      <div id="batches" class="batches"><div class="empty">拍下第一张，<br>这里会记住你看到的内容。</div></div>
+    </section>
+  </div>
+  <section class="answers-panel"><div class="section-title"><h2>答案</h2><div class="audio-controls"><button data-command="答案">答案</button><button data-command="全部答案">全部答案</button><button data-command="暂停播报">暂停播报</button><button data-command="继续播报">继续播报</button><button data-command="取消任务">取消任务</button></div></div><p class="hint">“答案”：最新一张；“全部答案”：按顺序回答所有尚未作答的图片。默认仅输出完整答案，不给解析。</p><div id="tasks"><div class="empty">整理完成后，问一个问题。</div></div></section>
+  <footer>拾页 / 手机采集，电脑思考。<span id="audioStatus">提示音已准备</span></footer>
+</main><script type="module" src="/app.js"></script>
+</body></html>

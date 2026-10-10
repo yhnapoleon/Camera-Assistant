@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f4f5ef"><title>拾页 · 鼠标版</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/mouse.css"></head>
+<body>
+<section id="pairView"><div class="pair">
+  <h1>拾页<span>鼠标版</span></h1>
+  <p class="lead">左键出答案 · 双击看解析 · 长按连拍 · 右键返回</p>
+  <form id="pairForm"><label for="pair">配对码</label><input id="pair" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="电脑终端显示的配对码"><button class="primary">连接</button></form>
+  <p id="pairStatus" role="status" aria-live="polite"></p>
+</div></section>
+<div id="app" hidden>
+  <header id="bar">
+    <span id="sourceChip" class="chip">截图端未连接</span>
+    <span class="spacer"></span>
+    <button id="backButton" data-action="back" data-touch-only hidden>‹ 目录</button>
+    <button id="codeButton" data-action="code" data-touch-only hidden>看代码</button>
+    <button id="detailButton" data-action="detail" data-touch-only hidden>解析</button>
+    <button id="captureButton" data-action="capture" data-touch-only>截图解答</button>
+    <button id="settingsButton" data-action="settings">设置</button>
+  </header>
+  <div id="stage">
+    <div id="scroll">
+      <main id="listView">
+        <p class="hint">左键点空白处：截图并给出答案。按住不放：约每 0.5 秒截一张，松开后一起解答。点下面的条目可重新打开。</p>
+        <ol id="jobs"></ol>
+        <div id="empty" class="empty">还没有解析记录。<br>点一下鼠标左键开始。</div>
+        <p class="hint">输入检测：<span id="inputLog">还没有收到鼠标操作</span></p>
+      </main>
+      <main id="answerView" hidden><article id="answer"></article></main>
+    </div>
+    <div id="track" hidden><i></i></div>
+    <div id="pageMark"></div>
+  </div>
+  <div id="rest"></div>
+  <div id="float"><div id="toast" role="status" aria-live="polite" hidden></div><div id="warnChip" hidden></div><div id="pendingChip" role="status" hidden></div></div>
+</div>
+<dialog id="settings">
+  <h2 tabindex="-1" autofocus>设置</h2>
+  <div class="row">
+    <label for="lines">每屏行数</label><select id="lines"><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></select>
+    <label for="wheelStep">滚轮每格</label><select id="wheelStep"><option value="page">翻一页</option><option value="half">翻半页</option><option value="three">翻 3 行</option></select>
+    <label for="turn">界面方向</label><select id="turn"><option value="landscape">横屏</option><option value="flipped">横屏（反向）</option><option value="follow">跟随手机</option></select>
+  </div>
+  <p class="note">行数越少字越大。界面固定为横屏：手机锁定竖屏时页面会自己转过来，此时鼠标指针的移动方向与画面不一致，打开手机的自动旋转即可恢复。</p>
+  <label for="systemPrompt">任务背景 / System Prompt</label>
+  <textarea id="systemPrompt" rows="3" maxlength="12000" placeholder="例如：这是程序设计课的在线练习，语言为 C++。"></textarea>
+  <div class="row"><button id="savePrompt">保存任务背景</button><span id="promptStatus" class="note"></span></div>
+  <p class="note">与解析端电脑上的 data/mouse/system-prompt.txt 是同一份，也可以提前在电脑上编辑。</p>
+  <div class="row"><label><input id="vibrate" type="checkbox"> 截图指令发出、答案到达时振动</label></div>
+  <p class="note" id="modelInfo"></p>
+  <p class="note" id="awakeInfo"></p>
+  <div class="row"><button id="archive">清空目录（归档到电脑）</button><button id="unpair">断开配对</button><span class="spacer"></span><button id="closeSettings" class="primary">关闭</button></div>
+</dialog>
+<script type="module" src="/mouse.js"></script>
+</body></html>

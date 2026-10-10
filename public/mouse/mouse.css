@@ -1,0 +1,115 @@
+:root{font-family:Inter,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-synthesis:none;--bg:#f4f5ef;--card:#fff;--ink:#263a35;--muted:#758178;--line:#dce3d8;--green:#2d6150;--soft:#e5eddf;--warn:#9b5d46;--warn-bg:#f5ebe5;--amber:#a86a1a;--mono:ui-monospace,"Cascadia Mono",Consolas,"Roboto Mono","Droid Sans Mono",monospace;--row:25px;--vw:100vw;--vh:100vh;color:var(--ink);background:var(--bg)}
+@media(prefers-color-scheme:dark){:root{--bg:#121a17;--card:#1a2420;--ink:#dfe7e2;--muted:#8d9a92;--line:#2c3a34;--green:#7fc3a6;--soft:#22302a;--warn:#e0a48d;--warn-bg:#3a2a24;--amber:#e0b068}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+html,body{height:100%}
+body{margin:0;overflow:hidden;touch-action:manipulation;cursor:default}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);border-radius:9px;padding:9px 14px;background:var(--card)}
+button.primary{background:var(--green);border-color:var(--green);color:var(--bg)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.job:focus-visible{outline:3px solid #90b5a1;outline-offset:2px}
+input,select,textarea{padding:11px;border:1px solid var(--line);border-radius:8px;background:var(--card);min-width:0}
+
+#pairView{position:fixed;inset:0;overflow:auto}
+.pair{max-width:420px;margin:0 auto;padding:min(18vh,120px) 22px 40px}
+.pair h1{font-size:34px;letter-spacing:2px;margin:0}
+.pair h1 span{font-size:13px;letter-spacing:3px;font-weight:500;color:var(--muted);margin-left:12px}
+.lead{font-size:13px;color:var(--muted);margin:10px 0 30px}
+.pair form{display:grid;gap:10px}
+.pair label{font-size:12px;color:var(--muted)}
+#pairStatus{font-size:13px;color:var(--warn);min-height:20px}
+
+/* The app fills the screen and scrolls inside #scroll, so its height in lines is known exactly. */
+#app{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg);padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+/* Landscape by default: on a phone that stays in portrait (rotation locked) the content is turned by the page. */
+.turned #app{inset:auto;top:0;left:var(--vw);width:var(--vh);height:var(--vw);transform-origin:0 0;transform:rotate(90deg)}
+.turned.flipped #app{left:0;top:var(--vh);transform:rotate(-90deg)}
+#bar{flex:none;display:flex;align-items:center;gap:8px;padding:7px 14px;border-bottom:1px solid var(--line)}
+#bar button{font-size:12px;padding:6px 11px;flex:none;white-space:nowrap}
+.spacer{flex:1}
+.chip{font-size:11px;padding:6px 10px;border-radius:20px;border:1px solid var(--line);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.chip.online{color:var(--green);background:var(--soft);border-color:transparent}
+.chip.offline{color:var(--warn);background:var(--warn-bg);border-color:transparent}
+#stage{flex:1;min-height:0;position:relative;display:flex}
+#scroll{flex:1;min-width:0;position:relative;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+#rest{flex:none}
+#track{position:absolute;top:0;bottom:0;right:1px;width:3px;pointer-events:none}
+#track i{position:absolute;left:0;right:0;border-radius:2px;background:var(--muted);opacity:.6}
+#pageMark{position:absolute;right:12px;bottom:6px;padding:1px 10px;border-radius:12px;font-size:12px;line-height:20px;background:var(--ink);color:var(--bg);opacity:0;transition:opacity .5s;pointer-events:none}
+#pageMark.on{opacity:.88;transition:none}
+
+#listView{max-width:1000px;margin:0 auto;padding:0 16px 24px}
+.hint{font-size:11px;line-height:1.8;color:var(--muted);margin:12px 2px}
+.empty{text-align:center;padding:40px 16px;color:var(--muted);line-height:2;font-size:14px}
+#jobs{list-style:none;margin:0;padding:0;background:var(--card);border-radius:14px;overflow:hidden}
+#jobs:empty{display:none}
+.job{display:flex;gap:12px;align-items:flex-start;padding:13px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.job:last-child{border-bottom:0}
+.job:hover{background:var(--soft)}
+.job .seq{font-size:12px;color:var(--muted);min-width:30px;padding-top:2px}
+.job-body{flex:1;min-width:0}
+.job-body b{display:block;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job-body p{margin:5px 0 0;font-size:12px;line-height:1.6;color:var(--muted);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.job .meta{font-size:10px;color:var(--muted);white-space:nowrap;padding-top:3px}
+.job.failed .job-body b,.job.failed .job-body p{color:var(--warn)}
+.job.capturing .job-body b,.job.analyzing .job-body b{color:var(--green)}
+
+/* With the mouse every press is a command; dragging must not select text. Fingers can still select and copy. */
+body.mouse #app{-webkit-user-select:none;user-select:none}
+/* The answer is set on a line grid: every line is --row tall and nothing has other vertical space, so a
+   screen holds a whole number of lines and a wheel step never cuts one. --row comes from "lines per screen". */
+#answerView{padding:0 14px}
+#answer{font-size:calc(var(--row) / 1.45);line-height:var(--row);overflow-wrap:anywhere}
+#answer :is(h3,h4,p,ul,pre,hr,section,figure){margin:0}
+#answer :is(h3,h4){font-size:inherit;line-height:inherit}
+.head{display:flex;gap:1em;height:var(--row);white-space:nowrap;overflow:hidden}
+.head b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.head span,.tips,#answer .note,figcaption{font-size:.78em;line-height:var(--row);color:var(--muted)}
+.tips{text-align:center}
+#answer .state{font-weight:600}
+#answer .error{color:var(--warn)}
+.markdown h3{color:var(--green)}
+.markdown h3:not(:first-child),#detail,figure{margin-top:var(--row)}
+.markdown ul{padding-left:1.3em}
+.markdown strong{color:var(--green)}
+.markdown code{font-family:var(--mono);font-size:.95em;line-height:0;padding:0 4px;border-radius:4px;background:var(--soft)}
+.markdown hr{border:0;height:var(--row);background:linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat}
+/* Code: one block per source line with its number; a line too long for the screen wraps under itself. */
+pre.code{font-family:var(--mono);font-size:calc(var(--row) / 1.3);line-height:var(--row);white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4;counter-reset:n;background:var(--soft);border-radius:4px}
+pre.code .l{display:block;position:relative;min-height:var(--row);padding-left:3.3em;counter-increment:n}
+pre.code .l::before{content:counter(n);position:absolute;left:0;width:2.5em;text-align:right;color:var(--muted)}
+.detail-title{height:var(--row);border-top:2px solid var(--line);font-size:.78em;letter-spacing:3px;color:var(--muted)}
+/* Approach level: every row is two grid lines high, with its content centred by equal margins, so paging stays on the grid. */
+.origin,.tags{display:flex;flex-wrap:wrap;align-items:center;column-gap:.55em;min-height:calc(var(--row) * 2)}
+.origin{font-size:calc(var(--row) * .92);line-height:calc(var(--row) * 2)}
+.origin b{min-width:0}
+.badge{flex:none;margin:calc(var(--row) * .35) 0;padding:0 .7em;border-radius:6px;font-size:.74em;font-weight:700;line-height:calc(var(--row) * 1.3);white-space:nowrap;color:var(--bg);background:var(--muted)}
+.origin.same .badge{background:var(--green)}
+.origin.variant .badge{background:var(--amber)}
+.origin .hot{flex:none;padding:0 .6em;border:1px solid var(--line);border-radius:6px;font-size:.6em;line-height:calc(var(--row) * 1.1);white-space:nowrap;color:var(--muted)}
+.origin.pending{font-size:calc(var(--row) * .8);color:var(--muted)}
+.difference{color:var(--muted)}
+.tags .label{flex:none;width:2.6em;line-height:calc(var(--row) * 2);color:var(--muted)}
+.tags .tag{margin:calc(var(--row) * .3) 0;padding:0 .75em;border-radius:calc(var(--row) * .7);font-size:calc(var(--row) * .8);line-height:calc(var(--row) * 1.4);white-space:nowrap;background:var(--soft)}
+.tags.approach .tag{color:var(--bg);background:var(--green)}
+figure img{display:block;max-width:100%;border:1px solid var(--line);border-radius:6px}
+
+/* Floats over the page so that a click never shifts the text being read; clicks pass through. */
+#float{position:absolute;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom));z-index:3;display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 16px;pointer-events:none}
+#toast,#warnChip{max-width:100%;padding:8px 16px;border-radius:10px;font-size:13px;line-height:1.6;background:var(--ink);color:var(--bg)}
+#toast.bad,#warnChip{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn)}
+#pendingChip{padding:8px 20px;border-radius:24px;font-size:14px;font-weight:600;white-space:nowrap;background:var(--green);color:var(--bg);box-shadow:0 4px 18px #0005;animation:breathe 1.2s ease-in-out infinite}
+@keyframes breathe{50%{opacity:.6}}
+
+dialog{width:min(680px,calc(100vw - 24px));border:1px solid var(--line);border-radius:14px;padding:18px;background:var(--bg);color:var(--ink)}
+.turned dialog{position:fixed;left:50%;top:50%;margin:0;width:min(680px,calc(var(--vh) - 24px));max-width:none;max-height:calc(var(--vw) - 24px);transform:translate(-50%,-50%) rotate(90deg)}
+.turned.flipped dialog{transform:translate(-50%,-50%) rotate(-90deg)}
+dialog::backdrop{background:#0008}
+dialog h2{font-size:17px;margin:0 0 10px;outline:0}
+dialog label{font-size:12px;color:var(--muted)}
+dialog select{padding:7px 9px}
+dialog textarea{display:block;width:100%;margin:8px 0;resize:vertical}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0}
+.row button{font-size:12px}
+.note{font-size:11px;line-height:1.7;color:var(--muted);margin:6px 0}
