@@ -26,7 +26,7 @@ export function createApp(config = {}) {
   mkdirSync(path.join(dataDir, 'images'), { recursive: true });
   const token = config.token || randomBytes(24).toString('hex');
   const authorized = value => { const a = Buffer.from(value || ''), b = Buffer.from(token); return a.length === b.length && timingSafeEqual(a, b); };
-  const provider = config.provider || createProvider({ dataDir, analyzer: config.analyzer || 'codex', model: config.model, effort: config.effort, deepseekKey: config.deepseekKey, ocr: config.ocr !== false, codexBin: config.codexBin, claudeBin: config.claudeBin });
+  const provider = config.provider || createProvider({ dataDir, analyzer: config.analyzer || 'codex', model: config.model, effort: config.effort, deepseekKey: config.deepseekKey, openaiKey: config.apiKey, ocr: config.ocr !== false, codexBin: config.codexBin, claudeBin: config.claudeBin });
   const engine = new Engine({ provider, stateFile: path.join(dataDir, 'state.json') });
   let controller, ttsBusy = false;
   const source = new RemoteSource(); let selectedSource = config.source || 'screen';

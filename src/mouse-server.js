@@ -127,7 +127,7 @@ export function createMouseApp(config = {}) {
   const promptFile = path.join(dataDir, 'system-prompt.txt');
   const readPrompt = () => { try { return readFileSync(promptFile, 'utf8').replace(/^﻿/, '').trim().slice(0, 12000); } catch { return ''; } };
   const analyzer = config.analyzer || 'codex';
-  const provider = config.analyze ? null : createProvider({ dataDir, analyzer, model: config.model, effort: config.effort, deepseekKey: config.deepseekKey, ocr: false, codexBin: config.codexBin, claudeBin: config.claudeBin });
+  const provider = config.analyze ? null : createProvider({ dataDir, analyzer, model: config.model, effort: config.effort, deepseekKey: config.deepseekKey, openaiKey: config.apiKey, ocr: false, codexBin: config.codexBin, claudeBin: config.claudeBin });
   const images = job => job.frames.map(f => f.path);
   const analyze = config.analyze || (analyzer === 'demo' ? demoAnswer : (job, { signal }) => provider.ask(ANSWER_PROMPT, images(job), { signal, systemPrompt: job.systemPrompt }));
   const match = config.match || (provider && (analyzer === 'demo' ? demoMatch : (job, { signal }) => provider.ask(matchPrompt(job), [], { signal })));
@@ -276,7 +276,7 @@ export function createMouseApp(config = {}) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const env = process.env;
-  const app = createMouseApp({ dataDir: env.MOUSE_DATA_DIR, token: env.PAIR_TOKEN, analyzer: env.ANALYZER, model: env.ANALYZER_MODEL, effort: env.ANALYZER_EFFORT, deepseekKey: env.DEEPSEEK_API_KEY, codexBin: env.CODEX_BIN, claudeBin: env.CLAUDE_BIN, tlsKey: env.TLS_KEY, tlsCert: env.TLS_CERT, concurrency: Number(env.MOUSE_CONCURRENCY) || undefined, maxFrames: Number(env.MOUSE_MAX_FRAMES) || undefined });
+  const app = createMouseApp({ dataDir: env.MOUSE_DATA_DIR, token: env.PAIR_TOKEN, apiKey: env.OPENAI_API_KEY, analyzer: env.ANALYZER, model: env.ANALYZER_MODEL, effort: env.ANALYZER_EFFORT, deepseekKey: env.DEEPSEEK_API_KEY, codexBin: env.CODEX_BIN, claudeBin: env.CLAUDE_BIN, tlsKey: env.TLS_KEY, tlsCert: env.TLS_CERT, concurrency: Number(env.MOUSE_CONCURRENCY) || undefined, maxFrames: Number(env.MOUSE_MAX_FRAMES) || undefined });
   const host = env.MOUSE_HOST || env.HOST || '127.0.0.1', port = Number(env.MOUSE_PORT || 8790), scheme = env.TLS_CERT ? 'https' : 'http';
   app.server.listen(port, host, () => {
     console.log(`拾页 · 鼠标版: ${scheme}://localhost:${port}/#pair=${app.token}`);

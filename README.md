@@ -152,6 +152,12 @@ TLS_CERT=certs/server.pem
 
 当前尚需真机验证：另一台 Windows 的 DPI/多显示器区域选择、实际网络延迟、账户的实时 STT/TTS 模型权限、Codex/Claude 图片推理，以及扬声器回声。自动测试不会消耗语音 API 或模型额度。
 
-## DeepSeek 配置（当前运行方案）
+## OpenAI API 直接解题
+
+设置 `ANALYZER=openai`、`ANALYZER_MODEL=gpt-6-luna`、`ANALYZER_EFFORT=low`，重启服务后直接调用 OpenAI Responses API，支持单图、多图和不带图的题单对照，省去每次启动 Codex CLI 的开销。`OPENAI_API_KEY` 可以从启动服务的进程环境继承，无需写入 `.env`。API 调用按 API 账户计费。
+
+网络需要 HTTP 代理时，可在本机 `.env` 配置 `HTTPS_PROXY=http://代理地址:端口` 和 `NODE_OPTIONS=--use-env-proxy`（Node.js 22.21+ 或 24.5+），使 `npm start` / `npm run start:mouse` 也启用代理。本机实测仅在 `.env` 设置 `NODE_USE_ENV_PROXY=1` 时连接超时，显式启用该选项后正常。响应耗时仍取决于题目、输出长度和网络。
+
+## DeepSeek 配置
 
 `ANALYZER=deepseek`、`ANALYZER_MODEL=deepseek-flash`、`ANALYZER_EFFORT=low`，密钥存于本机 `.env` 的 `DEEPSEEK_API_KEY`。静默整理和答案解析均使用 DeepSeek，并发送对应原图、任务背景和问题上下文。STT/TTS 仍使用 `OPENAI_API_KEY`。切换回 Codex 时将 ANALYZER 改为 codex，同时将模型名改为可用的 Codex 模型，然后重启。图片处理与语音 API 分别计费。

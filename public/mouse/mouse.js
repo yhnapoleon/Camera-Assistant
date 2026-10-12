@@ -22,6 +22,8 @@ let view = 'list', currentId = null, detail = false, wantDetail = false, shownKe
 let level = 'code', lastLevel = 0;
 let pitch = 25, scrollTarget = null, targetTimer, markTimer, lastFlip = 0;   // pitch: height of one text line in px
 let pointerType = matchMedia('(any-pointer: fine)').matches ? 'mouse' : 'touch', press = null, clickTimer = null, lastOpen = 0, lastTrigger = 0, lastRight = 0, sending = false, toastTimer, wakeLock;
+let lastPointerInput = null;
+let touchScroll = null, suppressTouchClickUntil = 0;
 // Phone and computer clocks differ; running times are measured on the computer's clock.
 const since = iso => Math.max(0, Math.round((Date.now() - skew - Date.parse(iso)) / 1000));
 const took = j => j.finishedAt ? Math.max(0, Math.round((Date.parse(j.finishedAt) - Date.parse(j.createdAt)) / 1000)) : since(j.createdAt);
@@ -246,6 +248,19 @@ const actions = {
 // Buttons marked data-touch-only are for fingers. To the mouse they are part of the page, where the
 // left button always means click = capture, double click = explanation, long press = burst.
 function control(target, type) { const found = target.closest?.('[data-action]'); return found && !(type === 'mouse' && found.hasAttribute('data-touch-only')) ? found : null; }
+// Some phone browsers deliver a mouse-like compatibility click after a real touch.
+// The initiating press identifies the input, rather than that final click's pointerType.
+function clickInput(event) {
+  if (event.sourceCapabilities?.firesTouchEvents) return 'touch';
+  const found = event.target.closest?.('[data-action]');
+  if (found && lastPointerInput?.control === found && Date.now() - lastPointerInput.at < 2000) return lastPointerInput.type;
+  return event.pointerType || pointerType;
+}
+function rememberInput(event, type) {
+  if (type === 'touch' || type === 'pen') suppressTouchClickUntil = 0;
+  lastPointerInput = { type, control: event.target.closest?.('[data-action]'), at: Date.now() };
+  pointerSeen(type);
+}
 function pointerSeen(type) {
   if (type === pointerType) return;
   pointerType = type; document.body.classList.toggle('mouse', type === 'mouse'); render();
@@ -267,14 +282,18 @@ function endPress(event, cancelled) {
   else clickTimer = setTimeout(() => { clickTimer = null; trigger(); }, DOUBLE_MS);
 }
 document.addEventListener('pointerdown', e => {
-  const type = e.pointerType || 'mouse'; pointerSeen(type);
+  const type = e.sourceCapabilities?.firesTouchEvents ? 'touch' : e.pointerType || 'mouse'; rememberInput(e, type);
   if (!entered || $('settings').open || type !== 'mouse' || e.button !== 0 || control(e.target, type)) return;
   endPress(null, true);
   const p = press = { pointer: e.pointerId, burst: null };
   if (!(view === 'answer' && level === 'insight')) p.timer = setTimeout(() => { if (press === p) startBurst(p); }, LONG_MS);   // no capturing from the approach level
   try { document.documentElement.setPointerCapture(e.pointerId); } catch {}   // the release must arrive even outside the page
 }, true);
-document.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') pointerSeen('mouse'); }, { capture: true, passive: true });
+document.addEventListener('touchstart', e => rememberInput(e, 'touch'), { capture: true, passive: true });
+document.addEventListener('pointermove', e => {
+  if (e.sourceCapabilities?.firesTouchEvents || (lastPointerInput?.type === 'touch' && Date.now() - lastPointerInput.at < 2000)) return;
+  if (e.pointerType === 'mouse') pointerSeen('mouse');
+}, { capture: true, passive: true });
 document.addEventListener('pointerup', e => {
   if (e.button === 0) endPress(e, false);
   // Not every phone browser raises contextmenu for a mouse; the button release is the fallback.
@@ -289,9 +308,36 @@ document.addEventListener('contextmenu', e => {
 });
 document.addEventListener('click', e => {
   if (!entered || $('settings').open) return;
-  const type = e.pointerType || pointerType, found = control(e.target, type); if (!found) return;
+  const type = clickInput(e);
+  if (type !== 'mouse' && Date.now() < suppressTouchClickUntil) return;
+  const found = control(e.target, type); if (!found) return;
   note(type === 'mouse' ? '左键' : '触摸'); actions[found.dataset.action](found);
 });
+// Native touch panning is unreliable inside the 90-degree rotated overflow area.
+// Project screen movement onto the page's vertical axis; normal orientation stays native.
+scroller.addEventListener('touchstart', e => {
+  touchScroll = null; suppressTouchClickUntil = 0;
+  if (!entered || $('settings').open || !root.classList.contains('turned') || e.touches.length !== 1 || e.target.closest?.('button,input,select,textarea,a')) return;
+  const finger = e.touches[0];
+  touchScroll = { id: finger.identifier, x: finger.clientX, top: scroller.scrollTop, flipped: root.classList.contains('flipped'), moved: false };
+  scrollTarget = null; clearTimeout(targetTimer);
+}, { passive: true });
+scroller.addEventListener('touchmove', e => {
+  if (!touchScroll) return;
+  if (e.touches.length !== 1 || !root.classList.contains('turned') || document.getSelection?.()?.isCollapsed === false) { touchScroll = null; return; }
+  const finger = e.touches[0]; if (finger.identifier !== touchScroll.id) return;
+  const delta = (finger.clientX - touchScroll.x) * (touchScroll.flipped ? -1 : 1);
+  if (!touchScroll.moved && Math.abs(delta) < 8) return;
+  touchScroll.moved = true;
+  if (e.cancelable) e.preventDefault();
+  scroller.scrollTop = Math.max(0, Math.min(Math.max(0, scroller.scrollHeight - scroller.clientHeight), touchScroll.top + delta));
+}, { passive: false });
+function finishTouchScroll() {
+  if (touchScroll?.moved) suppressTouchClickUntil = Date.now() + 500;
+  touchScroll = null;
+}
+scroller.addEventListener('touchend', finishTouchScroll, { passive: true });
+scroller.addEventListener('touchcancel', finishTouchScroll, { passive: true });
 $('app').addEventListener('wheel', e => {
   note('滚轮');
   const turned = root.classList.contains('turned'); if (!e.deltaY || $('settings').open || !(view === 'answer' || turned)) return;   // the directory scrolls natively
