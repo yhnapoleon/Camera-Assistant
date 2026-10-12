@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import WebSocket from 'ws';
 import sharp from 'sharp';
-import { ANSWER_PROMPT, createMouseApp, matchPrompt } from '../src/mouse-server.js';
+import { ANSWER_PROMPT, answerPrompt, createMouseApp, explainPrompt, matchPrompt, parseModels } from '../src/mouse-server.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const png = (background = 'white') => sharp({ create: { width: 64, height: 64, channels: 3, background } }).png().toBuffer();
@@ -104,6 +104,85 @@ test('a programming answer reaches the phone with its code first; the problem li
   assert.ok(!ANSWER_PROMPT.includes('1851'), 'the answer is written without the problem list in sight');
   const prompt = matchPrompt({ insights: answered.insights, answer: code });
   assert.ok(prompt.includes(code) && prompt.includes('题意：求每天之后第一个更高温度的距离') && prompt.includes('1851 包含每个查询的最小区间'));
+  p.ws.close();
+});
+
+test('code the user has already written is completed in place, and its explanation names what to change and where', () => {
+  for (const wanted of ['已有代码：', '在用户的代码上补全和修改', '“改：”', '“补：”', '命名要直白', '带讲解注释']) assert.ok(ANSWER_PROMPT.includes(wanted), `the answer prompt asks for: ${wanted}`);
+  assert.ok(!ANSWER_PROMPT.includes('不写注释'));
+  const code = '```py\n# 改：原来少了等号\nwhile left <= right:\n    pass\n```';
+  const drafted = explainPrompt({ answer: code, insights: [{ draft: 'full', categories: [], approaches: [] }] });
+  assert.ok(drafted.includes(code) && drafted.includes('用户已经在代码编辑器里写了自己的代码（较完整）'), 'the explanation is told what the answer step saw in the editor');
+  for (const wanted of ['## 还差什么', '## 要改的地方', '位置：', '- 现在：', '- 改成：', '- 原因：', '## 改完之后']) assert.ok(drafted.includes(wanted), `the explanation prompt asks for: ${wanted}`);
+  assert.ok(explainPrompt({ answer: code, insights: [{ no: '1', draft: 'part' }, { no: '2', draft: 'none' }] }).includes('（第 1 题部分）'));
+  for (const job of [{ answer: code, insights: [{ draft: 'none', categories: [], approaches: [] }] }, { answer: '1. A' }]) assert.ok(!explainPrompt(job).includes('答题时看到'), 'nothing is claimed about an empty editor or a plain question');
+});
+
+test('the model is chosen on the directory page: new captures go to it, a record keeps its own', async t => {
+  const dataDir = mkdtempSync(path.join(os.tmpdir(), 'mouse-model-test-')), made = [];
+  // Stands in for the real providers: answers with the name of the model it was made for.
+  const createProvider = options => { made.push(options); return { ask: async prompt => prompt.includes('请给出各题的解析') ? `解析来自 ${options.model}` : `标题：${options.model} 作答\n\n1. A`, close: async () => {} }; };
+  const config = { dataDir, analyze: undefined, explain: undefined, createProvider, analyzer: 'deepseek', model: 'deepseek-flash', effort: 'low', deepseekKey: 'ds-key', apiKey: 'oa-key', models: parseModels('openai:gpt-5.6-sol, openai:gpt-5.6-sol:high,deepseek:deepseek-flash') };
+  const s = await start(t, config), a = await agent(s), p = await phone(s.base), sol = 'openai:gpt-5.6-sol';
+  const hello = await p.until(e => e.type === 'hello');
+  assert.deepEqual(hello.engines, [{ id: 'deepseek:deepseek-flash', label: 'deepseek-flash' }, { id: sol, label: 'gpt-5.6-sol' }, { id: `${sol}:high`, label: 'gpt-5.6-sol · high' }], 'the model from ANALYZER comes first; one listed twice is offered once');
+  assert.equal(hello.engine, 'deepseek:deepseek-flash');
+  assert.deepEqual(made.map(o => [o.analyzer, o.model, o.effort, o.openaiKey]), [['deepseek', 'deepseek-flash', 'low', 'oa-key'], ['openai', 'gpt-5.6-sol', '', 'oa-key'], ['openai', 'gpt-5.6-sol', 'high', 'oa-key']]);
+
+  const first = await s.capture(); await a.shoot('white'); await s.app.store.whenIdle();
+  assert.equal(s.app.store.job(first.id).title, 'deepseek-flash 作答'); assert.equal(s.app.store.job(first.id).engine, 'deepseek:deepseek-flash');
+  assert.equal((await s.post('/api/model', { engine: 'openai:no-such-model' })).status, 400);
+  assert.deepEqual(await (await s.post('/api/model', { engine: sol })).json(), { engine: sol });
+  assert.equal((await p.until(e => e.type === 'engine')).engine, sol, 'every connected page hears of the change');
+  assert.equal(readFileSync(path.join(dataDir, 'model.txt'), 'utf8'), sol); assert.equal((await (await s.call('/api/state')).json()).engine, sol);
+  const second = await s.capture(); await a.shoot('black'); await s.app.store.whenIdle();
+  assert.equal(s.app.store.job(second.id).title, 'gpt-5.6-sol 作答'); assert.equal(s.app.store.detail(s.app.store.job(second.id)).engine, sol);
+  await s.post(`/api/explain?id=${first.id}`); await s.app.store.whenIdle();
+  assert.equal(s.app.store.job(first.id).explanation, '解析来自 deepseek-flash', 'the explanation comes from the model that gave the answer');
+
+  await s.app.close();
+  const again = await start(t, config); assert.equal(again.app.engine.id, sol, 'the choice survives a restart');
+  const fewer = await start(t, { ...config, models: [] }); assert.equal(fewer.app.engine.id, 'deepseek:deepseek-flash', 'a model that is no longer offered falls back to the first');
+  await fewer.post(`/api/explain?id=${second.id}`); await fewer.app.store.whenIdle();
+  assert.equal(fewer.app.store.job(second.id).explanation, '解析来自 deepseek-flash', 'and its records are explained by the current one');
+  p.ws.close();
+
+  assert.deepEqual(parseModels('openai:gpt-5.6-sol:high，codex'), [{ analyzer: 'openai', model: 'gpt-5.6-sol', effort: 'high' }, { analyzer: 'codex', model: '', effort: '' }]);
+  assert.deepEqual(parseModels(undefined), []); assert.throws(() => parseModels('gpt-5.6-sol'), /MOUSE_MODELS/); assert.throws(() => parseModels('openai:gpt-5.6-sol:fast'), /MOUSE_MODELS/);
+});
+
+test('a second device sends photos, one or a batch, and they are answered and shown like a capture', async t => {
+  const s = await start(t, { maxFrames: 3 }), p = await phone(s.base), incoming = path.join(s.dataDir, 'incoming');   // no capture agent is connected
+  const photo = async (batch, n, color) => s.call(`/api/camera/photo?batch=${batch}&n=${n}`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: await png(color) });
+  const submit = (batch, photos) => s.post('/api/camera/submit', { batch, photos });
+  assert.equal((await fetch(s.base + '/camera')).status, 200); assert.equal((await fetch(s.base + '/camera.js')).status, 200);
+  assert.equal((await (await s.call('/api/state')).json()).maxFrames, 3);
+  assert.equal((await fetch(s.base + '/api/camera/photo?batch=b1&n=0', { method: 'POST', body: await png() })).status, 401);
+
+  assert.deepEqual(await (await photo('b1', 0)).json(), { n: 0, count: 1 });
+  const one = (await (await submit('b1', [0])).json()).job;
+  assert.equal(one.mode, 'camera'); assert.equal(one.status, 'analyzing'); assert.equal(one.frameCount, 1);
+  const done = (await p.until(e => e.type === 'job' && e.job.status === 'done')).job;
+  assert.equal(done.id, one.id); assert.equal(done.title, '第 1 次，1 张'); assert.equal(done.answer, '1. A');
+
+  await photo('b2', 0, 'white'); await photo('b2', 1, 'black'); await photo('b2', 2, 'gray');
+  assert.match((await (await photo('b2', 3)).json()).error, /最多 3 张/);
+  assert.deepEqual(await (await photo('b2', 1, 'red')).json(), { n: 1, count: 3 }, 'a photo sent again replaces the earlier upload');
+  assert.equal((await s.post('/api/camera/discard?batch=b2&n=0')).status, 200); assert.equal(readdirSync(incoming).length, 2);
+  assert.equal((await submit('b2', [2, 0])).status, 400, 'a removed photo cannot be submitted');
+  assert.equal((await submit('b2', [2, 2])).status, 400); assert.equal((await submit('b2', [])).status, 400);
+  const two = (await (await submit('b2', [2, 1])).json()).job; assert.equal(two.frameCount, 2); assert.equal(two.seq, 2);
+  await s.app.store.whenIdle();
+  assert.equal(s.app.store.job(two.id).status, 'done'); assert.equal(readdirSync(incoming).length, 0); assert.equal(readdirSync(path.join(s.dataDir, 'images')).length, 3);
+  const [gray, red] = await Promise.all([0, 1].map(async n => (await sharp(Buffer.from(await (await s.call(`/api/image?id=${two.id}&n=${n}`)).arrayBuffer())).resize(1, 1).raw().toBuffer())[0]));
+  assert.ok(gray > 100 && gray < 160 && red > 200, 'the photos are kept in the order they were submitted in');
+  assert.equal((await submit('b2', [2, 1])).status, 400, 'a batch is submitted once');
+
+  assert.equal((await s.call('/api/camera/photo?batch=b3&n=0', { method: 'POST', body: 'not a picture' })).status, 400);
+  await photo('b4', 0); await photo('b4', 1); assert.equal(readdirSync(incoming).length, 2);
+  assert.equal((await s.post('/api/camera/discard?batch=b4')).status, 200); assert.equal(readdirSync(incoming).length, 0);
+  assert.equal(answerPrompt({ mode: 'single' }), ANSWER_PROMPT);
+  assert.ok(answerPrompt({ mode: 'camera' }).startsWith('这是同一次操作中用手机或平板拍摄的照片') && !answerPrompt({ mode: 'camera' }).includes('截图'), 'the model is told these are photos');
   p.ws.close();
 });
 

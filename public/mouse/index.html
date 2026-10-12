@@ -11,6 +11,7 @@
 <div id="app" hidden>
   <header id="bar">
     <span id="sourceChip" class="chip">截图端未连接</span>
+    <span id="models" class="models" role="group" aria-label="解答模型" hidden></span>
     <span class="spacer"></span>
     <button id="backButton" data-action="back" data-touch-only hidden>‹ 目录</button>
     <button id="codeButton" data-action="code" data-touch-only hidden>看代码</button>
@@ -21,7 +22,7 @@
   <div id="stage">
     <div id="scroll">
       <main id="listView">
-        <p class="hint">左键点空白处：截图并给出答案。按住不放：约每 0.5 秒截一张，松开后一起解答。点下面的条目可重新打开。</p>
+        <p class="hint">左键点空白处：截图并给出答案。按住不放：约每 0.5 秒截一张，松开后一起解答。点下面的条目可重新打开。顶栏有多个模型时，点一下换用哪个模型解答。</p>
         <ol id="jobs"></ol>
         <div id="empty" class="empty">还没有解析记录。<br>点一下鼠标左键开始。</div>
         <p class="hint">输入检测：<span id="inputLog">还没有收到鼠标操作</span></p>
@@ -47,6 +48,7 @@
   <div class="row"><button id="savePrompt">保存任务背景</button><span id="promptStatus" class="note"></span></div>
   <p class="note">与解析端电脑上的 data/mouse/system-prompt.txt 是同一份，也可以提前在电脑上编辑。</p>
   <div class="row"><label><input id="vibrate" type="checkbox"> 截图指令发出、答案到达时振动</label></div>
+  <p class="note">拍照端：在另一台手机或平板上打开本页地址加 /camera，可以拍照送来解答，答案显示在这里。</p>
   <p class="note" id="modelInfo"></p>
   <p class="note" id="awakeInfo"></p>
   <div class="row"><button id="archive">清空目录（归档到电脑）</button><button id="unpair">断开配对</button><span class="spacer"></span><button id="closeSettings" class="primary">关闭</button></div>

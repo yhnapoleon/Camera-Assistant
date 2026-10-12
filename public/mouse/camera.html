@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f4f5ef"><title>拾页 · 拍照端</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/mouse.css"><link rel="stylesheet" href="/camera.css"></head>
+<body class="camera">
+<section id="pairView"><div class="pair">
+  <h1>拾页<span>拍照端</span></h1>
+  <p class="lead">拍一张或一批 · 答案显示在看答案的那台手机上</p>
+  <form id="pairForm"><label for="pair">配对码</label><input id="pair" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="电脑终端显示的配对码"><button class="primary">连接</button></form>
+  <p id="pairStatus" role="status" aria-live="polite"></p>
+</div></section>
+<div id="cam" hidden>
+  <header id="bar"><span id="modeChip" class="chip"></span><span class="spacer"></span><button id="unpair">断开配对</button></header>
+  <div id="finder"><video id="video" playsinline muted></video><p id="finderNote"></p><i id="flash"></i></div>
+  <ol id="shots"></ol>
+  <p id="status" role="status" aria-live="polite"></p>
+  <footer id="controls">
+    <button id="single" class="primary">拍一张并解答</button>
+    <button id="begin">批量拍摄</button>
+    <button id="cancel" hidden>取消</button>
+    <button id="shoot" class="primary" hidden>拍一张</button>
+    <button id="finish" hidden>完成并解答</button>
+  </footer>
+  <ul id="sent"></ul>
+  <input id="file" type="file" accept="image/*" capture="environment" hidden>
+</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="/camera.js"></script>
+</body></html>

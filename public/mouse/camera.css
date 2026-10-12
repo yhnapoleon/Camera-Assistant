@@ -1,0 +1,29 @@
+/* Camera page: a second phone or tablet that photographs the questions. Colours, buttons, chips and the pairing
+   form come from mouse.css. */
+#cam{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg);padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#finder{flex:1;min-height:0;position:relative;background:#000;overflow:hidden}
+#video{display:block;width:100%;height:100%;object-fit:contain}
+#finderNote{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;margin:0;padding:24px;text-align:center;white-space:pre-line;font-size:14px;line-height:1.9;color:#cfd6d1}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+#flash.on{animation:flash .25s ease-out}
+@keyframes flash{from{opacity:.8}to{opacity:0}}
+#shots{flex:none;display:flex;gap:8px;list-style:none;margin:0;padding:8px 14px 0;overflow-x:auto}
+#shots:empty{display:none}
+#shots li{position:relative;flex:none;width:64px;height:64px;border-radius:8px;overflow:hidden;border:2px solid var(--line);background:var(--soft)}
+#shots img{display:block;width:100%;height:100%;object-fit:cover}
+#shots li.uploading img{opacity:.45}
+#shots li.failed{border-color:var(--warn)}
+#shots b{position:absolute;left:0;bottom:0;padding:0 5px;font-size:11px;font-weight:500;line-height:16px;background:#000a;color:#fff}
+#shots button{position:absolute;top:0;right:0;width:26px;height:26px;padding:0;border:0;border-radius:0 0 0 8px;font-size:15px;line-height:26px;background:#000a;color:#fff}
+#status{flex:none;margin:0;padding:8px 14px 0;min-height:30px;font-size:13px;line-height:22px;color:var(--muted)}
+#controls{flex:none;display:flex;gap:10px;padding:8px 14px 12px}
+#controls button{flex:1;padding:14px 8px;font-size:16px;white-space:nowrap}
+#controls #cancel{flex:none;padding-left:18px;padding-right:18px}
+#controls button:disabled{opacity:.45}
+/* What was sent from this device, newest first; the answers themselves are shown on the other phone. */
+#sent{flex:none;list-style:none;margin:0;padding:0 14px 10px;max-height:20vh;overflow-y:auto;font-size:12px;line-height:1.9;color:var(--muted)}
+#sent:empty{display:none}
+#sent li{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#sent li.done{color:var(--green)}
+#sent li.failed{color:var(--warn)}
+body.camera #toast{position:fixed;left:16px;right:16px;bottom:calc(104px + env(safe-area-inset-bottom));z-index:3;text-align:center}
