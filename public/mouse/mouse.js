@@ -7,6 +7,7 @@ const saved = {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const active = j => j.status === 'capturing' || j.status === 'analyzing';
 const working = j => j.explainStatus === 'running' || j.matchStatus === 'running';   // answered, with more on its way
+const pictures = j => j.mode === 'camera' ? '照片' : '截图';   // sent from the camera page, or captured on the other computer
 const clock = iso => new Date(iso).toLocaleTimeString('zh-CN', { hour12: false });
 const LONG_MS = 500, DOUBLE_MS = 300;   // hold this long for a burst; second click within this time for a double click
 const root = document.documentElement, scroller = $('scroll');
@@ -17,6 +18,10 @@ $('pair').value = token;
 
 const jobs = new Map(), rows = new Map(), images = new Map();
 let ws, retry = 0, retryTimer, entered = false, armed = false, linked = false, sourceState = null, skew = 0;
+// The models the computer can ask, and the one that answers the next capture. A record names its own as "provider:model".
+let engines = [], engineId = '';
+const modelName = id => engines.find(e => e.id === id)?.label || String(id || '').split(':').slice(1).join(' · ') || id || '';
+const drafted = job => !!job?.insights?.some(i => i.draft === 'part' || i.draft === 'full');   // written on top of the user's own code
 let view = 'list', currentId = null, detail = false, wantDetail = false, shownKey = '', listScroll = 0, selfBack = false;
 // A programming problem is read in two levels: 'insight' (problem list match and tags) first, then 'code'. Everything else is 'code' only.
 let level = 'code', lastLevel = 0;
@@ -117,7 +122,7 @@ function enter() {
 function onMessage(m) {
   if (m.type === 'hello') {
     retry = 0; linked = true; skew = Date.now() - Date.parse(m.now); sourceState = m.source;
-    $('modelInfo').textContent = m.analyzer === 'demo' ? '演示模式：不调用分析模型。' : `解析模型：${m.analyzer}${m.model ? ` · ${m.model}` : ''}`;
+    engines = m.engines || []; engineId = m.engine || '';
     enter();
     const ids = new Set(m.jobs.map(j => j.id));
     for (const id of [...jobs.keys()]) if (!ids.has(id)) jobs.delete(id);
@@ -126,6 +131,7 @@ function onMessage(m) {
   }
   else if (m.type === 'job') apply(m.job, true);
   else if (m.type === 'source') sourceState = m.source;
+  else if (m.type === 'engine') engineId = m.engine;
   else if (m.type === 'reset') { jobs.clear(); for (const url of images.values()) URL.revokeObjectURL(url); images.clear(); if (view === 'answer') leaveAnswer(); }
   render();
 }
@@ -197,6 +203,13 @@ async function trigger() {
   catch (e) { toast(e.message, true); }
   finally { sending = false; render(); }
 }
+// The choice is kept on the computer, so it also holds for the camera page and for any other page connected.
+async function chooseModel(id) {
+  if (id === engineId) return;
+  try { engineId = (await post('/api/model', { engine: id })).engine; toast(`之后的截图和拍照由 ${modelName(engineId)} 解答`); }
+  catch (e) { toast(e.message, true); }
+  render();
+}
 // Long press: the computer takes a screenshot about every half second until the button is released,
 // then answers all of them together. The regular "hold" tells it the button is still down.
 async function startBurst(p) {
@@ -243,6 +256,7 @@ const actions = {
   code: () => setLevel('code'),
   detail: () => { if (detail) hideDetail(); else showDetail(); },
   settings: () => openSettings(),
+  model: control => chooseModel(control.dataset.id),
   open: control => { lastOpen = Date.now(); openJob(control.dataset.id); },
 };
 // Buttons marked data-touch-only are for fingers. To the mouse they are part of the page, where the
@@ -363,10 +377,11 @@ function inline(parent, text) {
   }
   if (last < text.length) parent.append(text.slice(last));
 }
-function markdown(text) {
+// marked: the code was written on top of the user's own, where a comment opening with 改： or 补： stands above each change.
+function markdown(text, marked) {
   const root = document.createDocumentFragment(); let para, list, code;
   for (const raw of text.split(/\r?\n/)) {
-    if (code) { if (/^\s*```/.test(raw)) code = null; else code.append(el('span', raw, 'l')); continue; }
+    if (code) { if (/^\s*```/.test(raw)) code = null; else code.append(el('span', raw, marked && /(?:^\s*\*+|\/\/|#|--|\/\*+)\s*[改补][:：]/.test(raw) ? 'l changed' : 'l')); continue; }
     const line = raw.trim(); let m;
     if (line.startsWith('```')) { para = list = null; code = el('pre', undefined, 'code'); root.append(code); }
     else if (!line) para = list = null;
@@ -402,6 +417,12 @@ function renderBar() {
   // Reading with the mouse needs no buttons, so the bar gives its lines to the answer; trouble is still announced.
   $('bar').hidden = reading && !finger;
   $('warnChip').hidden = !$('bar').hidden || online; $('warnChip').textContent = linked ? '截图端未连接' : '与电脑断开，正在重连…';
+  // Which model answers the next capture: chosen here, on the directory, when there is more than one.
+  // The buttons are updated in place, like the rows of the list, so that a click always lands on the one pressed.
+  const models = $('models'), offered = engines.map(e => e.id).join('|'); models.hidden = reading || engines.length < 2;
+  if (models.dataset.offered !== offered) { models.dataset.offered = offered; models.replaceChildren(...engines.map(e => { const button = el('button', e.label); button.dataset.action = 'model'; button.dataset.id = e.id; return button; })); }
+  for (const button of models.children) { const on = button.dataset.id === engineId; button.classList.toggle('on', on); button.setAttribute('aria-pressed', on); }
+  $('modelInfo').textContent = `解答模型：${modelName(engineId)}${engines.length > 1 ? '。在目录页顶栏切换，从下一次截图或拍照起生效；已有记录的解析仍由当时作答的模型生成。' : ''}`;
   const job = jobs.get(currentId), insight = reading && level === 'insight';
   $('backButton').hidden = !reading || !finger; $('backButton').textContent = reading && !insight && twoLevels(job) ? '‹ 思路' : '‹ 目录';
   $('settingsButton').hidden = reading; $('codeButton').hidden = !insight || !finger;
@@ -422,21 +443,21 @@ function renderList() {
     }
     const title = j.status === 'done' ? j.title || '答案' : j.status === 'failed' ? '没有完成' : j.status === 'capturing' ? '截图中…' : '解答中…';
     const text = j.status === 'done' ? j.snippet : j.status === 'failed' ? j.error : progress(j);
-    const meta = `${clock(j.createdAt)}${j.finishedAt ? ` · ${took(j)}s` : ''}${j.frameCount > 1 ? ` · ${j.frameCount} 图` : ''}`;
+    const meta = `${clock(j.createdAt)}${j.finishedAt ? ` · ${took(j)}s` : ''}${j.mode === 'camera' ? ` · 拍照 ${j.frameCount} 张` : j.frameCount > 1 ? ` · ${j.frameCount} 图` : ''}${j.engine && engines.length > 1 ? `\n${modelName(j.engine)}` : ''}`;   // the model on a line of its own, so a narrow screen keeps room for the title
     for (const [node, value] of [[row.querySelector('b'), title], [row.querySelector('p'), text || ''], [row.querySelector('.meta'), meta]]) if (node.textContent !== value) node.textContent = value;
     row.className = `job ${j.status}`;
     if (row !== before) box.insertBefore(row, before); else before = row.nextSibling;
   }
 }
 function detailSection(job) {
-  const section = el('section'); section.id = 'detail'; section.append(el('p', '解析', 'detail-title'));
+  const section = el('section'); section.id = 'detail'; section.append(el('p', drafted(job) ? '解析 · 你的代码还差什么' : '解析', 'detail-title'));
   if (job.explanation !== undefined) { const body = el('div', undefined, 'markdown'); body.append(markdown(job.explanation)); section.append(body); }
   else if (job.explainStatus === 'failed') section.append(el('p', `解析没有生成：${job.explainError}。双击重试。`, 'error'));
   else if (job.explainStatus === 'running') section.append(ticking('正在生成解析…', job.explainStartedAt));
   else section.append(el('p', '正在载入…', 'note'));
   for (let n = 0; n < job.frameCount; n++) {
-    const figure = el('figure'), img = el('img'); img.alt = `截图 ${n + 1}`; img.hidden = true;
-    figure.append(el('figcaption', job.frameCount > 1 ? `截图 ${n + 1} / ${job.frameCount}` : '本次截图'), img); section.append(figure); showImage(job.id, n, img, figure);
+    const figure = el('figure'), img = el('img'), kind = pictures(job); img.alt = `${kind} ${n + 1}`; img.hidden = true;
+    figure.append(el('figcaption', job.frameCount > 1 ? `${kind} ${n + 1} / ${job.frameCount}` : `本次${kind}`), img); section.append(figure); showImage(job.id, n, img, figure);
   }
   return section;
 }
@@ -464,6 +485,7 @@ function insightCards(job) {
       const row = el('p', undefined, label === '思路' ? 'tags approach' : 'tags'); row.append(el('span', label, 'label'), ...list.map(text => el('span', text, 'tag'))); box.append(row);
     }
     if (item.summary) box.append(el('p', `题意：${item.summary}`, 'difference'));
+    if (item.draft === 'part' || item.draft === 'full') box.append(el('p', `已有代码：${item.draft === 'full' ? '较完整' : '写了一部分'}。答案是在你的代码上改的，改动处标有“改：”“补：”；双击看还差什么、改哪里。`, 'difference'));
   }
   return box;
 }
@@ -475,7 +497,8 @@ function renderAnswer() {
   // One line: number and title on the left, the facts about this capture on the right.
   const head = el('div', undefined, 'head'), facts = [clock(job.createdAt)];
   if (job.finishedAt) facts.push(`${took(job)} 秒`);
-  if (job.frameCount > 1) facts.push(`${job.frameCount} 张截图`);
+  if (job.frameCount > 1 || job.mode === 'camera') facts.push(`${job.frameCount} 张${pictures(job)}`);
+  if (job.engine) facts.push(modelName(job.engine));
   head.append(el('b', job.status === 'done' ? `#${job.seq} ${job.title || '答案'}` : `#${job.seq}`), el('span', facts.join(' · ')));
   box.replaceChildren(head);
   let tips = '右键：回目录　左键：截新图　长按：连拍';
@@ -483,9 +506,9 @@ function renderAnswer() {
   else if (job.status === 'done') {
     const away = twoLevels(job) ? '回思路' : '回目录';
     if (job.answer === undefined) { box.append(el('p', '正在载入…', 'note')); load(job.id); }
-    else { const body = el('div', undefined, 'markdown answers'); body.append(markdown(job.answer)); box.append(body); }
+    else { const body = el('div', undefined, 'markdown answers'); body.append(markdown(job.answer, drafted(job))); box.append(body); }
     if (detail) box.append(detailSection(job));
-    tips = detail ? `右键：收起解析，再按一次${away}` : `左键：截新图　双击：看解析　右键：${away}　长按：连拍`;
+    tips = detail ? `右键：收起解析，再按一次${away}` : `左键：截新图　双击：${drafted(job) ? '看还差什么' : '看解析'}　右键：${away}　长按：连拍`;
   }
   else if (job.status === 'failed') box.append(el('p', '这一次没有完成', 'state'), el('p', job.error, 'error'));
   else if (job.status === 'capturing' && job.mode === 'burst') box.append(el('p', '正在连拍…', 'state'), el('p', `已截 ${job.shots} 张，松开后一起解答`, 'note'));

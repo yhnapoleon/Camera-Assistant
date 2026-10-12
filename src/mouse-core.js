@@ -20,6 +20,9 @@ export function splitAnswer(text) {
 }
 
 const tags = value => plain(value).split(/[、，,；;/|｜]+/).map(s => s.trim()).filter(Boolean).slice(0, 6);
+// How much of their own code the user had in the editor when the screenshot was taken: 无 / 部分 / 较完整.
+// From 'part' on, the answer is the user's code completed and corrected, not a solution written from scratch.
+const draft = value => /部分|不完整/.test(value) ? 'part' : /完整/.test(value) ? 'full' : 'none';
 // A programming problem is answered with its code and labelled lines about it. The lines are taken out of the text
 // and shown first, as their own level. How the problem relates to the problem list is not part of this answer:
 // it is asked afterwards, about the finished solution (see run).
@@ -27,12 +30,12 @@ function codeAnswer(answer) {
   const found = [], body = []; let fenced = false, current;
   for (const line of answer.split('\n')) {
     if (/^\s*```/.test(line)) fenced = !fenced;
-    const m = !fenced && line.match(/^[\s>*#-]*(类型|题号|代码|题意|分类|思路)\**\s*[:：]\s*(.*)$/);
+    const m = !fenced && line.match(/^[\s>*#-]*(类型|题号|已有代码|代码|题意|分类|思路)\**\s*[:：]\s*(.*)$/);
     if (!m) { body.push(line); continue; }
-    const key = { 题号: 'no', 题意: 'summary', 分类: 'categories', 思路: 'approaches' }[m[1]]; if (!key) continue;
+    const key = { 题号: 'no', 已有代码: 'draft', 题意: 'summary', 分类: 'categories', 思路: 'approaches' }[m[1]]; if (!key) continue;
     if (!current || key === 'no' || current[key] !== undefined) { current = {}; found.push(current); }   // a repeated label starts the next problem
     if (key === 'no') { current.no = plain(m[2]); body.push(`${current.no}.`); }
-    else current[key] = key === 'summary' ? plain(m[2]) : tags(m[2]);
+    else current[key] = key === 'summary' ? plain(m[2]) : key === 'draft' ? draft(m[2]) : tags(m[2]);
   }
   const code = body.join('\n').trim();
   return found.length && code.includes('```') ? { kind: 'code', insights: found.map(i => ({ categories: [], approaches: [], ...i })), answer: code } : {};
@@ -73,9 +76,11 @@ export function sameFrame(a, b, limit = 8) {
 // One job per click or long press: capturing (screenshots still coming) -> analyzing -> done | failed.
 // A click takes one screenshot. A long press ("burst") takes one every `interval` ms until release and
 // answers them together. Screenshots are requested one at a time, so a slow agent only slows the pace.
+// Photos sent from the camera page skip capturing: submit() makes a job of them that starts at analyzing.
+// engine() names the model chosen at that moment; a job keeps it, so everything asked about it later goes to the same one.
 export class JobStore extends EventEmitter {
-  constructor({ analyze, match, explain, requestShot = () => {}, prompt = () => '', stateFile, concurrency = 2, captureTimeout = 12000, lateWindow = 60000, interval = 500, maxFrames = 12, holdTimeout = 3000, maxHold = 60000 } = {}) {
-    super(); Object.assign(this, { analyze, matcher: match, explainer: explain, requestShot, prompt, stateFile, concurrency, captureTimeout, lateWindow, interval, maxFrames, holdTimeout, maxHold });
+  constructor({ analyze, match, explain, requestShot = () => {}, prompt = () => '', engine = () => undefined, stateFile, concurrency = 2, captureTimeout = 12000, lateWindow = 60000, interval = 500, maxFrames = 12, holdTimeout = 3000, maxHold = 60000 } = {}) {
+    super(); Object.assign(this, { analyze, matcher: match, explainer: explain, requestShot, prompt, engine, stateFile, concurrency, captureTimeout, lateWindow, interval, maxFrames, holdTimeout, maxHold });
     this.state = { seq: 0, jobs: [] }; this.running = new Map(); this.explaining = new Map();
     this.live = new Map();   // capturing job id -> { holding, heldAt, shot, shotAt, last, error, timeout, next, guard }
     this.shots = new Map();  // screenshot request id -> job id
@@ -106,7 +111,7 @@ export class JobStore extends EventEmitter {
   detail(j) { const { frames, systemPrompt, ...rest } = j; return { ...rest, frameCount: frames.length, hasExplanation: j.explanation !== undefined, snippet: brief(j) }; }
 
   create(mode = 'single') {
-    const job = { id: randomUUID(), seq: ++this.state.seq, mode, status: 'capturing', systemPrompt: this.prompt() || '', createdAt: now(), frames: [], shots: 0 };
+    const job = { id: randomUUID(), seq: ++this.state.seq, mode, status: 'capturing', engine: this.engine(), systemPrompt: this.prompt() || '', createdAt: now(), frames: [], shots: 0 };
     this.state.jobs.push(job);
     const live = { holding: mode === 'burst', heldAt: Date.now() }; this.live.set(job.id, live);
     if (live.holding) {
@@ -115,6 +120,11 @@ export class JobStore extends EventEmitter {
       live.guard.unref();
     }
     this.changed(job); this.shoot(job); return job;
+  }
+  // Pictures that arrive ready-made (a batch from the camera page): nothing is captured, the job starts at the model.
+  submit(frames, mode = 'camera') {
+    const job = { id: randomUUID(), seq: ++this.state.seq, mode, status: 'analyzing', engine: this.engine(), systemPrompt: this.prompt() || '', createdAt: now(), frames: frames.map(({ id, path, capturedAt }) => ({ id, path, capturedAt: capturedAt || now() })), shots: frames.length };
+    this.state.jobs.push(job); this.changed(job); this.pump(); return job;
   }
   shoot(job) {
     const live = this.live.get(job.id), shot = randomUUID();

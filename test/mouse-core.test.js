@@ -38,6 +38,15 @@ test('a programming answer is split into the approach level and the code', () =>
   assert.equal(splitAnswer('标题：没有代码\n\n分类：图\n思路：拓扑排序').kind, undefined, 'tags without code are left as plain text');
 });
 
+test('a programming answer records how much of their own code the user already had', () => {
+  const answered = state => splitAnswer(`标题：两数之和\n\n类型：代码题\n已有代码：${state}\n代码：\n${code}\n题意：找出和为目标值的两个下标\n分类：哈希表\n思路：一次遍历`);
+  assert.deepEqual(answered('较完整').insights, [{ draft: 'full', summary: '找出和为目标值的两个下标', categories: ['哈希表'], approaches: ['一次遍历'] }]);
+  assert.equal(answered('较完整').answer, code, 'the line is taken out of the code like the other labels');
+  assert.equal(answered('“部分”，主体还没写完').insights[0].draft, 'part'); assert.equal(answered('无').insights[0].draft, 'none'); assert.equal(answered('无（只有模板）').insights[0].draft, 'none');
+  const two = splitAnswer(`标题：两道题\n\n已有代码：部分\n${code}\n思路：迭代\n已有代码：无\n${code}\n思路：拓扑排序`);
+  assert.deepEqual(two.insights.map(i => [i.draft, i.approaches[0]]), [['part', '迭代'], ['none', '拓扑排序']], 'without numbers the line starts the next problem');
+});
+
 test('the problem list holds AlgoMooc 200 and the rest of Hot 100, each problem once', () => {
   assert.equal(PROBLEMS.size, 203); assert.equal([...PROBLEMS.values()].filter(p => p.hot).length, 100);
   assert.equal(PROBLEM_LIST.split('\n').reduce((n, line) => n + line.split('、').length, 0), 203);
@@ -100,6 +109,26 @@ test('a click asks for one screenshot, answers it, and keeps long texts out of l
   const summary = store.summary(job);
   assert.equal(summary.answer, undefined); assert.equal(summary.title, '第 1 次'); assert.equal(summary.snippet, 'shot-1.jpg'); assert.equal(summary.hasExplanation, false);
   assert.equal(store.expects(shots[0]), false); assert.throws(() => store.frame(shots[0], frame(2)), /已结束/);
+});
+
+test('pictures handed in ready-made are answered without anything being captured', async () => {
+  const { store, shots } = setup(); const events = []; store.on('job', j => events.push(j.status));
+  const job = store.submit([{ id: 'a', path: 'photo-1.jpg' }, { id: 'b', path: 'photo-2.jpg', capturedAt: '2026-10-10T04:00:00.000Z' }]);
+  assert.equal(job.mode, 'camera'); assert.equal(job.status, 'analyzing'); assert.equal(job.seq, 1); assert.equal(store.capturing, undefined);
+  await store.whenIdle();
+  assert.deepEqual(events, ['analyzing', 'done']); assert.equal(shots.length, 0);
+  assert.equal(job.answer, 'photo-1.jpg photo-2.jpg'); assert.equal(store.summary(job).frameCount, 2); assert.equal(job.frames[1].capturedAt, '2026-10-10T04:00:00.000Z');
+  assert.equal(store.create().seq, 2, 'captures and handed-in pictures share one numbering');
+});
+
+test('a record keeps the model that was chosen when it was made', async () => {
+  let chosen = 'deepseek:deepseek-flash'; const asked = [];
+  const { store, shots } = setup({ engine: () => chosen, analyze: async j => { asked.push(j.engine); return '答案'; } });
+  const first = store.create(); chosen = 'openai:gpt-5.6-sol'; store.frame(shots[0], frame(1));
+  const second = store.submit([{ id: 'a', path: 'photo-1.jpg' }]); await store.whenIdle();
+  assert.deepEqual(asked, ['deepseek:deepseek-flash', 'openai:gpt-5.6-sol'], 'a change of model does not reach a capture already under way');
+  assert.equal(store.summary(first).engine, 'deepseek:deepseek-flash'); assert.equal(store.detail(second).engine, 'openai:gpt-5.6-sol');
+  assert.equal(setup().store.create().engine, undefined);
 });
 
 test('analyses run in parallel up to the limit and a failure does not stop the queue', async () => {
