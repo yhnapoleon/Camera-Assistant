@@ -257,6 +257,7 @@ const actions = {
   detail: () => { if (detail) hideDetail(); else showDetail(); },
   settings: () => openSettings(),
   model: control => chooseModel(control.dataset.id),
+  voice: () => { endPress(null, true); location.assign(`/voice#pair=${encodeURIComponent(token)}`); },
   open: control => { lastOpen = Date.now(); openJob(control.dataset.id); },
 };
 // Buttons marked data-touch-only are for fingers. To the mouse they are part of the page, where the
@@ -462,7 +463,9 @@ function detailSection(job) {
   return section;
 }
 const RELATION = { same: '原题', variant: '变式', none: '不在题单' };
-const matched = origin => origin ? `${RELATION[origin.relation]}${origin.problem ? ` ${origin.relation === 'none' ? '最接近 ' : ''}${origin.problem}` : ''}` : '';
+// A problem a company asks that is not on LeetCode carries the company instead of a number.
+const sourced = origin => origin.company ? `${origin.company}手撕` : '';
+const matched = origin => origin ? `${RELATION[origin.relation]}${origin.problem ? ` ${origin.relation === 'none' ? '最接近 ' : ''}${origin.problem}${origin.company ? `（${sourced(origin)}）` : ''}` : ''}` : '';
 // Approach level of a programming problem: how it relates to the problem list, then category and approach tags.
 // Set large, two grid lines per row, to be taken in at a glance before going on to the code. The code is
 // already there when this is shown; the match is worked out from it afterwards and fills in its row when it arrives.
@@ -475,6 +478,7 @@ function insightCards(job) {
       origin.append(el('span', RELATION[item.origin.relation], 'badge'));
       if (item.origin.problem) origin.append(el('b', item.origin.relation === 'none' ? `最接近：${item.origin.problem}` : item.origin.problem));
       if (item.origin.hot) origin.append(el('span', 'Hot 100', 'hot'));
+      if (item.origin.company) origin.append(el('span', sourced(item.origin), 'hot company'));
       box.append(origin);
       if (item.origin.note) box.append(el('p', `差异：${item.origin.note}`, 'difference'));
     }

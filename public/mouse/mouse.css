@@ -98,6 +98,7 @@ pre.code .l.changed{color:var(--amber);font-weight:600;box-shadow:inset 3px 0 va
 .origin.same .badge{background:var(--green)}
 .origin.variant .badge{background:var(--amber)}
 .origin .hot{flex:none;padding:0 .6em;border:1px solid var(--line);border-radius:6px;font-size:.6em;line-height:calc(var(--row) * 1.1);white-space:nowrap;color:var(--muted)}
+.origin .company{border-color:var(--green);font-weight:700;color:var(--green)}
 .origin.pending{font-size:calc(var(--row) * .8);color:var(--muted)}
 .difference{color:var(--muted)}
 .tags .label{flex:none;width:2.6em;line-height:calc(var(--row) * 2);color:var(--muted)}

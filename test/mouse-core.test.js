@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { JobStore, parseMatch, sameFrame, splitAnswer } from '../src/mouse-core.js';
-import { PROBLEMS, PROBLEM_LIST } from '../src/problem-list.js';
+import { COMPANY_PROBLEMS, COMPANY_PROBLEM_LIST, PROBLEMS, PROBLEM_LIST } from '../src/problem-list.js';
 
 const tick = () => new Promise(r => setImmediate(r));
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -64,6 +64,27 @@ test('the match follows from whether the closest listed solution has to change; 
   assert.equal(parseMatch('结论：146')[0].relation, 'none', 'nothing is claimed without the line it rests on');
   assert.deepEqual(parseMatch('题号：1\n候选：206\n改动：不用改\n结论：206\n题号：2\n候选：207、210\n改动：要改，多求一步\n结论：207').map(o => [o.relation, o.problem, o.note]), [['same', '206. 反转链表', ''], ['variant', '207. 课程表', '多求一步']]);
   assert.deepEqual(parseMatch('没有按格式回答'), []);
+});
+
+test('company problems are numbered E1 on, each with its company and what it asks, apart from the LeetCode numbers', () => {
+  assert.equal(COMPANY_PROBLEMS.size, 28); assert.deepEqual([...COMPANY_PROBLEMS.keys()], Array.from({ length: 28 }, (_, i) => `E${i + 1}`));
+  for (const p of COMPANY_PROBLEMS.values()) { assert.ok(p.title && p.company && p.gist.length >= 20, `${p.no} is complete`); assert.ok(!PROBLEMS.has(p.no)); }
+  assert.equal(new Set([...COMPANY_PROBLEMS.values()].map(p => p.title)).size, 28, 'each problem once');
+  assert.ok(![...PROBLEMS.values()].some(l => [...COMPANY_PROBLEMS.values()].some(c => c.title === l.title)), 'none repeats a listed LeetCode problem');
+  assert.deepEqual([COMPANY_PROBLEMS.get('E1').title, COMPANY_PROBLEMS.get('E1').company], ['合并嵌套 JSON', '字节']);
+  assert.equal(COMPANY_PROBLEM_LIST.split('\n').length, 28); assert.ok(COMPANY_PROBLEM_LIST.startsWith('E1 合并嵌套 JSON｜字节｜给两个嵌套的 JSON'));
+});
+
+test('a company problem is matched by its E number, named by its title and marked with its company', async () => {
+  assert.deepEqual(parseMatch('候选：E1、E7\n比较：合并规则相同\n改动：不用改\n结论：E1'), [{ relation: 'same', problem: '合并嵌套 JSON', hot: false, note: '', company: '字节' }]);
+  assert.deepEqual(parseMatch('改动：“要改：数字改为覆盖”\n**结论：** e1（合并嵌套 JSON）'), [{ relation: 'variant', problem: '合并嵌套 JSON', hot: false, note: '数字改为覆盖', company: '字节' }]);
+  assert.deepEqual(parseMatch('改动：不用改\n结论：E10'), [{ relation: 'same', problem: '带过期时间的 LRU 缓存', hot: false, note: '', company: '字节' }], 'E10 is not LeetCode 10');
+  assert.deepEqual(parseMatch('改动：不用改\n结论：E146'), [{ relation: 'none', problem: '', hot: false, note: '' }], 'an E number that is not listed is no match, and not LeetCode 146 either');
+  assert.deepEqual(parseMatch('改动：用不上\n结论：E3'), [{ relation: 'none', problem: '圆环回原点', hot: false, note: '', company: '字节' }]);
+  assert.deepEqual(parseMatch('题号：1\n改动：不用改\n结论：E2\n题号：2\n改动：不用改\n结论：146').map(o => [o.problem, o.company]), [['小于 n 的最大数', '字节'], ['146. LRU 缓存', undefined]]);
+  const { store, shots } = setup({ analyze: async () => `标题：合并 JSON\n\n类型：代码题\n代码：\n${code}\n分类：递归、哈希表\n思路：深度优先`, match: async () => '候选：E1\n改动：不用改\n结论：E1' });
+  const job = store.create(); store.frame(shots[0], frame(1)); await store.whenIdle();
+  assert.equal(store.summary(job).snippet, '原题 合并嵌套 JSON（字节手撕） · 递归 · 哈希表 · 深度优先');
 });
 
 test('the code is delivered first; the match with the problem list is asked from the finished answer and added later', async t => {
