@@ -3,7 +3,8 @@
 // It prints what differs and changes nothing. Sources: the problem data embedded in the AlgoMooc 200 page,
 // leetcode.com's problem index and its "Top 100 Liked" study plan (the same 100 problems as 热题 100 on
 // leetcode.cn), and leetcode.cn's titles. leetcode.cn often refuses requests from scripts; the titles are then
-// left unchecked and the output says so.
+// left unchecked and the output says so. The company problems of that file are not LeetCode problems and are not
+// checked here: scripts/company-problems.mjs counts how often they are reported.
 import { PROBLEMS } from '../src/problem-list.js';
 
 const agent = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36' };

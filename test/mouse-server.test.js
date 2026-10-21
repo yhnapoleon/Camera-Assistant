@@ -104,6 +104,8 @@ test('a programming answer reaches the phone with its code first; the problem li
   assert.ok(!ANSWER_PROMPT.includes('1851'), 'the answer is written without the problem list in sight');
   const prompt = matchPrompt({ insights: answered.insights, answer: code });
   assert.ok(prompt.includes(code) && prompt.includes('题意：求每天之后第一个更高温度的距离') && prompt.includes('1851 包含每个查询的最小区间'));
+  assert.ok(prompt.includes('E1 合并嵌套 JSON｜字节｜给两个嵌套的 JSON') && prompt.indexOf('E28 手写 Agent Loop') < prompt.indexOf('217 存在重复元素'), 'company problems come with what they ask, ahead of the LeetCode list');
+  for (const wanted of ['以写出的题意为准', '题号是字母 E 加数字', '分不出远近时，才优先写企业手撕题的题号']) assert.ok(prompt.includes(wanted), `the match prompt says: ${wanted}`);
   p.ws.close();
 });
 

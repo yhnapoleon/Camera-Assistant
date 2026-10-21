@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { PROBLEMS } from './problem-list.js';
+import { COMPANY_PROBLEMS, PROBLEMS } from './problem-list.js';
 
 const active = j => ['capturing', 'analyzing'].includes(j.status);
 const now = () => new Date().toISOString();
@@ -43,21 +43,22 @@ function codeAnswer(answer) {
 // The comparison with the problem list, one group of lines per problem, in the order of the problems. The model
 // is not asked for "原题" or "变式": to it a retold problem is a 变式 too. It says which listed problem is closest
 // (结论) and whether that problem's standard solution would have to be changed (改动); the label follows from that.
-// The title comes from the list, and a number that is not on the list is no match.
+// The title comes from the list, and a number that is not on the list is no match. A company problem (E1, E2, …)
+// has no LeetCode number to show: it is named by its title, and the company that asks it goes with the result.
 export function parseMatch(text) {
   const found = []; let change = '';
   for (const line of String(text || '').split(/\r?\n/)) {
     const m = line.match(/^[\s>*#-]*(改动|结论)\**\s*[:：]\s*(.+)$/); if (!m) continue;
     if (m[1] === '改动') { change = plain(m[2]).replace(/^[“"「]|[”"」。.]$/g, ''); continue; }
-    const listed = PROBLEMS.get(m[2].match(/\d+/)?.[0]);
+    const id = m[2].match(/\bE\d+\b/i)?.[0].toUpperCase(), company = COMPANY_PROBLEMS.get(id), listed = id ? company : PROBLEMS.get(m[2].match(/\d+/)?.[0]);
     const relation = !listed ? 'none' : /^不用改/.test(change) ? 'same' : /^要改/.test(change) ? 'variant' : 'none';
-    found.push({ relation, problem: listed ? `${listed.no}. ${listed.title}` : '', hot: !!listed?.hot, note: relation === 'variant' ? change.replace(/^要改[”"」]?\s*[:：，,]?\s*/, '') : '' });
+    found.push({ relation, problem: company ? company.title : listed ? `${listed.no}. ${listed.title}` : '', hot: !!listed?.hot, note: relation === 'variant' ? change.replace(/^要改[”"」]?\s*[:：，,]?\s*/, '') : '', ...company && { company: company.company } });
     change = '';
   }
   return found;
 }
 const relation = { same: '原题', variant: '变式', none: '不在题单' };
-const verdict = o => o ? [`${relation[o.relation]}${o.relation !== 'none' && o.problem ? ` ${o.problem}` : ''}`] : [];
+const verdict = o => o ? [`${relation[o.relation]}${o.relation !== 'none' && o.problem ? ` ${o.problem}${o.company ? `（${o.company}手撕）` : ''}` : ''}`] : [];
 const brief = j => j.insights?.length ? j.insights.map(i => [...verdict(i.origin), ...i.categories, ...i.approaches].join(' · ')).join('；').slice(0, 120) : snippet(j.answer);
 
 // a, b: square greyscale thumbnails of two screenshots. Compared in 8×8 blocks, so a blinking caret or a

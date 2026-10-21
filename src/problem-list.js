@@ -28,3 +28,42 @@ export const PROBLEMS = new Map(LIST.split('\n').flatMap(line => {
 }));
 // The list as it is sent to the model.
 export const PROBLEM_LIST = LIST.replace(/\*/g, '');
+
+// Hand-coding problems that companies ask in interviews and that have no LeetCode number, or none on the list above:
+// taken from interview reports, see docs/企业手撕题.md for where each was reported and how often. So far all are
+// from 字节 interviews. The model cannot know such a problem by its title, so each line carries what is asked, in the
+// form most often reported: 题号 题名｜公司｜题意. A problem that is in substance one of the LeetCode problems above
+// is left out (检测循环依赖 is 207 / 210), so that it is still shown as that problem.
+const COMPANY_LIST = `E1 合并嵌套 JSON｜字节｜给两个嵌套的 JSON（字典、列表、基本类型），返回合并后的新对象，不修改原数据：两边都有的键，值都是字典就递归合并，都是列表就拼接；只在一边出现的键直接保留。完整的规则常见还有数字相加、字符串拼接、布尔值取或、其余类型用后一个覆盖
+E2 小于 n 的最大数｜字节｜给一个整数 n 和一组可以重复使用的数字（如 2、4、9），求用这些数字拼成的小于 n 的最大整数，例如 n = 23121 时是 22999
+E3 圆环回原点｜字节｜圆环上有 10 个点，编号 0 到 9，从 0 出发，每步顺时针或逆时针走一格，求走 n 步后回到 0 的走法数
+E4 排序奇升偶降链表｜字节｜一个链表的奇数位节点升序、偶数位节点降序（如 1→8→3→6→5→4→7→2），把它排成整体升序，要求 O(n) 时间、O(1) 空间
+E5 36 进制加法｜字节｜36 进制用 0-9 和 a-z 表示，给两个 36 进制正整数的字符串，求它们的和（如 1b + 2x = 48），不允许整体转成十进制相加再转回来
+E6 数字与中文数字互转｜字节｜把阿拉伯数字的整数转成中文读法，或把中文数字转成阿拉伯数字，要处理“零”的读法和万、亿的分节
+E7 大数相加 / 相减｜字节｜两个用字符串表示的非负大整数，求和或求差，不能转成整数类型，也不能用大数库；相减要处理结果为负和前导零。常追问带负号、带小数点怎么办
+E8 手撕排序｜字节｜不调用库函数，自己实现快速排序（最常见）、堆排序、归并排序或冒泡排序，把整数数组排成升序
+E9 抢红包｜字节｜把总金额随机分给 n 个人（拼手气红包），每个人至少分到 1 分钱，各人金额之和等于总金额
+E10 带过期时间的 LRU 缓存｜字节｜在 LRU 缓存（get、put 都是 O(1)，容量满时淘汰最久未使用的键）之上，每个键带过期时间，过期的键读不到并被删除。常追问并发安全、不靠轮询怎么清理
+E11 限流器｜字节｜实现一个限流器，判断一次请求能否放行：令牌桶（按固定速率补充令牌，桶有容量上限）或滑动窗口（一个时间窗口内最多放行 N 次），常要求线程安全
+E12 阻塞队列 / 生产者消费者｜字节｜实现容量有限、线程安全的阻塞队列：队列满时放入的线程等待，队列空时取出的线程等待；或者用锁和条件变量写出生产者、消费者模型
+E13 多线程交替打印｜字节｜启动两个或三个线程（或协程），让它们按固定顺序轮流打印，例如三个线程轮流打印 1、2、3 或 A、B、C，两个线程交替打印 1 到 100
+E14 单例模式｜字节｜写一个线程安全的单例类：第一次用到时才创建，用双重检查锁、静态内部类或局部静态变量保证只创建一个实例
+E15 线程池｜字节｜实现一个简单的线程池：固定数量的工作线程从任务队列里取任务执行，支持提交任务和关闭
+E16 手写 shared_ptr｜字节｜用 C++ 实现简化的引用计数智能指针 shared_ptr：构造、拷贝、赋值、析构时维护引用计数，计数归零时释放对象
+E17 带并发限制的异步调度器｜字节｜用 JavaScript 实现 Scheduler：add(task) 接收一个返回 Promise 的任务，同时运行的任务不超过给定上限（常见是 2 个），其余的排队，按加入的先后启动
+E18 手写 Promise.all｜字节｜自己实现 Promise.all，也有考 race、allSettled、any 的：接收一组 Promise，按各自的规则汇总成功的结果或失败
+E19 防抖 / 节流｜字节｜实现 debounce（停止触发满 delay 之后才执行一次，常要求支持立即执行和取消）或 throttle（每个时间段内最多执行一次）
+E20 数组扁平化｜字节｜实现 flatten：把任意层嵌套的数组展开成一维数组，常要求能指定展开的层数
+E21 列表转树｜字节｜把一组带 id 和 parentId 的扁平记录转换成嵌套的树形结构，子节点放在 children 数组里
+E22 函数柯里化｜字节｜实现 curry：把一个多参数的函数变成可以分几次传参的函数，参数凑够之后才执行原函数
+E23 发布订阅｜字节｜实现 EventEmitter：on 订阅、off 取消订阅、emit 触发、once 只触发一次
+E24 手写 call / bind｜字节｜自己实现 Function.prototype.call 或 bind：改变函数执行时的 this，bind 还要支持预先传入一部分参数
+E25 手撕多头注意力｜字节｜用 PyTorch 或 NumPy 写出 Multi-Head Attention 的前向计算：Q、K、V 做线性映射后分成多个头，做缩放点积注意力（除以 √d_k，可以带 mask），再把各个头拼接输出。也有只写 Self-Attention，或再加上一层 Transformer 编码器的
+E26 手撕交叉熵｜字节｜用 NumPy 或 PyTorch 实现 softmax 和交叉熵损失，有时连同 sigmoid 一起写，要处理数值稳定
+E27 手撕 AUC｜字节｜给出一批样本的预测分数和 0 / 1 标签，计算 AUC，即随机取一个正样本和一个负样本，正样本得分更高的概率
+E28 手写 Agent Loop｜字节｜用代码或伪代码写出 ReAct 式的 Agent 主循环：调用模型、解析出工具调用、执行工具、把结果写回上下文，直到模型给出最终答案或达到最大步数`;
+
+// number -> { no, title, company, gist }
+export const COMPANY_PROBLEMS = new Map(COMPANY_LIST.split('\n').map(line => { const [, no, title, company, gist] = line.match(/^(E\d+) (.+?)｜(.+?)｜(.+)$/); return [no, { no, title, company, gist }]; }));
+// The list as it is sent to the model.
+export const COMPANY_PROBLEM_LIST = COMPANY_LIST;

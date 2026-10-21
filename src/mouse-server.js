@@ -1,19 +1,21 @@
 import http from 'node:http';
 import https from 'node:https';
 import os from 'node:os';
-import { randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomInt, randomUUID, timingSafeEqual, X509Certificate } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket, { WebSocketServer } from 'ws';
 import sharp from 'sharp';
 import { JobStore } from './mouse-core.js';
-import { PROBLEM_LIST } from './problem-list.js';
+import { COMPANY_PROBLEM_LIST, PROBLEM_LIST } from './problem-list.js';
 import { ANALYZERS, EFFORTS, createProvider } from './providers.js';
 import { RemoteSource } from './remote-source.js';
+import { createVoiceRoutes } from './voice.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const staticFiles = { '/': ['index.html', 'text/html'], '/mouse.js': ['mouse.js', 'text/javascript'], '/mouse.css': ['mouse.css', 'text/css'], '/camera': ['camera.html', 'text/html'], '/camera.js': ['camera.js', 'text/javascript'], '/camera.css': ['camera.css', 'text/css'] };
+Object.assign(staticFiles, { '/voice': ['voice.html', 'text/html'], '/voice.js': ['voice.js', 'text/javascript'], '/voice-recorder.js': ['voice-recorder.js', 'text/javascript'], '/voice.css': ['voice.css', 'text/css'] });
 const json = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(body)); };
 const validId = s => typeof s === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(s);
 const pause = ms => new Promise(r => setTimeout(r, ms));
@@ -62,6 +64,10 @@ export const answerPrompt = job => worded(ANSWER_PROMPT, job);
 // Asked after a programming problem has been answered, without the screenshots: the comparison is made on what
 // the model itself wrote down as the substance of the problem and on its finished code, not on the wording or the
 // story of the problem. It is asked whether the listed solution would have to change, not for a label: see parseMatch.
+// The problems companies ask that are not on LeetCode come first and with what they ask, since a title alone tells
+// the model nothing about them. The closest candidate is the one whose solution needs the least change; a company
+// problem is preferred to a LeetCode problem only when both fit unchanged. Preferring it whenever the two seemed
+// equally close made a plain LRU variant come out as a variant of the company's LRU with expiry.
 const solved = i => [i.no && `题号：${i.no}`, i.summary && `题意：${i.summary}`, i.categories.length && `分类：${i.categories.join('、')}`, i.approaches.length && `思路：${i.approaches.join('、')}`].filter(Boolean).join('\n');
 export const matchPrompt = job => `下面的编程题已经解出，这是每道题的题意、解法标签和代码：
 <解答>
@@ -69,18 +75,21 @@ ${job.insights.map(solved).join('\n\n')}
 
 ${job.answer}
 </解答>
-请判断每道题与文末题单的关系。题单里的题你都熟悉；要比较的是题目的实质和解法，不是题名、故事背景或个别关键词。
+请判断每道题与文末题单的关系。题单分两部分：力扣题只列了题号和题名，这些题你都熟悉；企业手撕题是公司面试里要求手写的题，不在力扣题那一部分里，你不一定见过，每道题后面写了它的题意，以写出的题意为准，不要只凭题名判断。要比较的是题目的实质和解法，不是题名、故事背景或个别关键词。
 每道题依次输出四行，每行以给定的词和冒号开头：
-候选：题单中最可能与这道题是同一道题或同一类题的题号，最多 3 个，用顿号分隔；一个都没有就写“无”。
+候选：题单中最可能与这道题是同一道题或同一类题的题号，最多 3 个，用顿号分隔；一个都没有就写“无”。企业手撕题的题号是字母 E 加数字，照原样写。
 比较：拿最接近的那个候选，对比要求输出的内容、限制条件和主要解法，写出相同和不同之处，不超过 50 个字。
 改动：把那道候选题的标准解法拿来解这道题，算法本身要不要改？三种写法选一种：
   “不用改”：只需要适配读入和输出的格式、字符、变量名或故事背景。
   “要改：改什么”：核心模型和主要解法相同，但算法要改一处或多做一步，例如条件变了、多求一样东西、方向或维度变了、数据范围逼出另一种写法。说明不超过 20 个字。
   “用不上”：主要解法不同。只是用到同一种通用技巧（都用了哈希表、排序、DFS、二分等）也算用不上。
-结论：最接近的那个候选的题号；没有候选就写“无”。
+结论：最接近的那个候选的题号，也就是拿它的标准解法来解这道题、要改的地方最少的那个；没有候选就写“无”。只有一道企业手撕题和一道力扣题都“不用改”、分不出远近时，才优先写企业手撕题的题号。
 题号只能写题单里出现的题号。有多道题时，每道题先写一行“题号：N”，再写这四行。除这些行以外不要输出别的内容。
 
-题单（分组：题号 题名）：
+企业手撕题（题号 题名｜出题公司｜题意）：
+${COMPANY_PROBLEM_LIST}
+
+力扣题（分组：题号 题名）：
 ${PROBLEM_LIST}`;
 // What the answer step saw in the editor (see "已有代码" above), told to the explanation so that both agree.
 const DRAFT = { part: '部分', full: '较完整' };
@@ -127,8 +136,10 @@ async function demoAnswer(job) {
   const code = ['#include <bits/stdc++.h>', 'using namespace std;', 'int main() {', ...changes, ...Array.from({ length: 34 - changes.length }, (_, i) => `    cout << "演示代码第 ${i + 4 + changes.length} 行，检查每屏行数和滚轮翻页" << endl;`), '    return 0;', '}'];
   return `标题：演示代码题 ${job.seq}（未调用模型）\n\n类型：代码题\n已有代码：${drafted ? '较完整' : '无'}\n代码：\n\`\`\`cpp\n${code.join('\n')}\n\`\`\`\n题意：演示用的题意，设计一个容量按字节计算的缓存\n分类：链表、哈希表、设计\n思路：哈希表 + 双向链表、哨兵节点、分类讨论`;
 }
-async function demoMatch() {
+// Of the programming problems, one in two is matched with a company problem, the other with a LeetCode problem.
+async function demoMatch(job) {
   await pause(2500);
+  if (job.seq % 3 === 1) return '候选：E1、E7\n比较：演示用的比较，合并规则相同\n改动：不用改\n结论：E1';
   return '候选：146\n比较：演示用的比较，淘汰规则相同，容量的算法不同\n改动：要改：演示用的差异说明，容量改为按字节计算\n结论：146';
 }
 async function demoExplain(job) {
@@ -158,6 +169,11 @@ class MouseSource extends RemoteSource {
 }
 
 export function createMouseApp(config = {}) {
+  if (!!config.httpsKey !== !!config.httpsCert) throw Error('附加 HTTPS 入口需要同时配置 MOUSE_TLS_KEY 和 MOUSE_TLS_CERT');
+  const extraTls = config.httpsKey ? { key: readFileSync(config.httpsKey), cert: readFileSync(config.httpsCert) } : null;
+  // Export only parsed public certificate bytes, never arbitrary PEM file contents or private keys.
+  const phoneCa = config.phoneCa ? new X509Certificate(readFileSync(config.phoneCa)) : null;
+  if (phoneCa && !phoneCa.ca) throw Error('手机安装证书必须是 CA 证书');
   const dataDir = path.resolve(config.dataDir || path.join(root, 'data', 'mouse'));
   const imageDir = path.join(dataDir, 'images'); mkdirSync(imageDir, { recursive: true });
   const token = config.token || pairToken(dataDir);
@@ -228,6 +244,10 @@ export function createMouseApp(config = {}) {
     try {
       const url = new URL(req.url, 'http://localhost'), ip = req.socket.remoteAddress;
       if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return json(res, 403, { error: '只接受同源请求' });
+      if (req.method === 'GET' && url.pathname === '/phone-ca.crt' && phoneCa) {
+        res.writeHead(200, { 'Content-Type': 'application/x-x509-ca-cert', 'Content-Disposition': 'attachment; filename="shiyue-phone-ca.crt"' });
+        return res.end(phoneCa.raw);
+      }
       if (staticFiles[url.pathname] && req.method === 'GET') {
         const [name, mime] = staticFiles[url.pathname]; res.writeHead(200, { 'Content-Type': `${mime}; charset=utf-8` }); return res.end(readFileSync(path.join(root, 'public', 'mouse', name)));
       }
@@ -236,6 +256,7 @@ export function createMouseApp(config = {}) {
       if (blocked(ip)) return json(res, 429, { error: '配对码错误次数过多，请一分钟后再试' });
       if (!authorized(req.headers.authorization?.replace(/^Bearer /, ''))) { failed(ip); return json(res, 401, { error: '请填写电脑终端显示的配对码' }); }
       const get = req.method === 'GET', post = req.method === 'POST', clientId = req.headers['x-client-id'], id = url.searchParams.get('id');
+      if (await voice.handle(req, res, url.pathname)) return;
 
       // Phone page
       if (get && url.pathname === '/api/state') return json(res, 200, snapshot());
@@ -348,9 +369,12 @@ export function createMouseApp(config = {}) {
       json(res, 404, { error: '找不到接口' });
     } catch (e) { if (!res.headersSent) json(res, 400, { error: e.message }); else res.end(); }
   };
+  const voice = createVoiceRoutes({ config, body, json, engine: () => engine, prompt: readPrompt });
   const server = config.tlsKey && config.tlsCert ? https.createServer({ key: readFileSync(config.tlsKey), cert: readFileSync(config.tlsCert) }, handler) : http.createServer(handler);
+  const httpsServer = extraTls ? https.createServer(extraTls, handler) : null;
+  const servers = [server, httpsServer].filter(Boolean);
   const wss = new WebSocketServer({ noServer: true, maxPayload: 4000 });
-  server.on('upgrade', (req, socket, head) => {
+  for (const listener of servers) listener.on('upgrade', (req, socket, head) => {
     try {
       if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) { socket.destroy(); return; }
       wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
@@ -375,7 +399,7 @@ export function createMouseApp(config = {}) {
     // Phones on Wi-Fi power saving answer late; only a long silence counts as a dead socket.
     for (const ws of clients) { if (Date.now() - ws.seen > 15000) ws.terminate(); else ws.ping(); }
   }, 3000); heartbeat.unref();
-  return { server, store, source, token, promptFile, engines, get engine() { return engine; }, async close() { clearInterval(heartbeat); store.close(); for (const ws of wss.clients) ws.terminate(); await new Promise(r => wss.close(r)); await new Promise(r => server.close(r)); for (const e of engines) await e.provider?.close?.(); } };
+  return { server, httpsServer, store, source, token, promptFile, engines, get engine() { return engine; }, async close() { voice.close(); clearInterval(heartbeat); store.close(); for (const ws of wss.clients) ws.terminate(); await new Promise(r => wss.close(r)); await Promise.all(servers.map(listener => new Promise(r => listener.close(r)))); for (const e of engines) await e.provider?.close?.(); } };
 }
 
 // MOUSE_MODELS: the models offered besides the one in ANALYZER, as "openai:gpt-5.6-sol", or with a reasoning
@@ -390,8 +414,16 @@ export function parseModels(text) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const env = process.env;
-  const app = createMouseApp({ dataDir: env.MOUSE_DATA_DIR, token: env.PAIR_TOKEN, apiKey: env.OPENAI_API_KEY, analyzer: env.ANALYZER, model: env.ANALYZER_MODEL, effort: env.ANALYZER_EFFORT, models: parseModels(env.MOUSE_MODELS), deepseekKey: env.DEEPSEEK_API_KEY, codexBin: env.CODEX_BIN, claudeBin: env.CLAUDE_BIN, tlsKey: env.TLS_KEY, tlsCert: env.TLS_CERT, concurrency: Number(env.MOUSE_CONCURRENCY) || undefined, maxFrames: Number(env.MOUSE_MAX_FRAMES) || undefined });
   const host = env.MOUSE_HOST || env.HOST || '127.0.0.1', port = Number(env.MOUSE_PORT || 8790), scheme = env.TLS_CERT ? 'https' : 'http';
+  const httpsPort = env.MOUSE_HTTPS_PORT ? Number(env.MOUSE_HTTPS_PORT) : null;
+  if (httpsPort !== null && (!Number.isInteger(httpsPort) || httpsPort < 1 || httpsPort > 65535 || httpsPort === port)) throw Error('MOUSE_HTTPS_PORT 必须是与 MOUSE_PORT 不同的有效端口');
+  if (httpsPort && (!env.MOUSE_TLS_KEY || !env.MOUSE_TLS_CERT)) throw Error('启用 MOUSE_HTTPS_PORT 时必须配置 MOUSE_TLS_KEY 和 MOUSE_TLS_CERT');
+  const app = createMouseApp({ dataDir: env.MOUSE_DATA_DIR, token: env.PAIR_TOKEN, apiKey: env.OPENAI_API_KEY, voiceSttModel: env.VOICE_STT_MODEL, analyzer: env.ANALYZER, model: env.ANALYZER_MODEL, effort: env.ANALYZER_EFFORT, models: parseModels(env.MOUSE_MODELS), deepseekKey: env.DEEPSEEK_API_KEY, codexBin: env.CODEX_BIN, claudeBin: env.CLAUDE_BIN, tlsKey: env.TLS_KEY, tlsCert: env.TLS_CERT, httpsKey: httpsPort ? env.MOUSE_TLS_KEY : undefined, httpsCert: httpsPort ? env.MOUSE_TLS_CERT : undefined, phoneCa: env.MOUSE_PHONE_CA, concurrency: Number(env.MOUSE_CONCURRENCY) || undefined, maxFrames: Number(env.MOUSE_MAX_FRAMES) || undefined });
+  if (app.httpsServer) app.httpsServer.listen(httpsPort, host, () => {
+    console.log(`手机 HTTPS 入口已启动，监听 ${host}:${httpsPort}，与原入口共用配对码、模型与记录`);
+    const addresses = Object.values(os.networkInterfaces()).flat().filter(i => i.family === 'IPv4' && !i.internal).map(i => i.address);
+    for (const address of addresses) console.log(`手机录音：https://${address}:${httpsPort}/voice；先安装 CA：${scheme}://${address}:${port}/phone-ca.crt`);
+  });
   app.server.listen(port, host, () => {
     console.log(`拾页 · 鼠标版: ${scheme}://localhost:${port}/#pair=${app.token}`);
     console.log(`配对码 ${app.token} | 监听 ${host}:${port} | 解答模型 ${app.engine.label}`);
