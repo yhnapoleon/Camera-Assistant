@@ -18,6 +18,7 @@ import { demoLesson } from './lesson-demo.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const staticFiles = { '/': ['index.html', 'text/html'], '/mouse.js': ['mouse.js', 'text/javascript'], '/mouse.css': ['mouse.css', 'text/css'], '/camera': ['camera.html', 'text/html'], '/camera.js': ['camera.js', 'text/javascript'], '/camera.css': ['camera.css', 'text/css'] };
 Object.assign(staticFiles, { '/voice': ['voice.html', 'text/html'], '/voice.js': ['voice.js', 'text/javascript'], '/voice-recorder.js': ['voice-recorder.js', 'text/javascript'], '/voice.css': ['voice.css', 'text/css'] });
+Object.assign(staticFiles, { '/lesson-view.js': ['lesson-view.js', 'text/javascript'], '/lesson.css': ['lesson.css', 'text/css'] });
 const json = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(body)); };
 const validId = s => typeof s === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(s);
 const pause = ms => new Promise(r => setTimeout(r, ms));
@@ -241,6 +242,10 @@ export function createMouseApp(config = {}) {
     res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'${wsHost}; frame-ancestors 'none'`);
     try {
       const url = new URL(req.url, 'http://localhost'), ip = req.socket.remoteAddress;
+      if (req.method === 'GET' && url.pathname === '/highlight.min.js') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
+        return res.end(readFileSync(path.join(root, 'node_modules', '@highlightjs', 'cdn-assets', 'highlight.min.js')));
+      }
       if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return json(res, 403, { error: '只接受同源请求' });
       if (req.method === 'GET' && url.pathname === '/phone-ca.crt' && phoneCa) {
         res.writeHead(200, { 'Content-Type': 'application/x-x509-ca-cert', 'Content-Disposition': 'attachment; filename="shiyue-phone-ca.crt"' });

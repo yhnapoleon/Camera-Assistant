@@ -114,3 +114,26 @@ test('a fresh button tap immediately after scrolling remains usable', () => {
   p.fire('pointerdown', { pointerType: 'touch' }); p.fire('pointerup', { pointerType: 'touch' }); p.fire('click', { pointerType: 'mouse' });
   assert.equal(p.value('level'), 'code');
 });
+
+test('new lessons advance through analysis, implementation and diagram before code; back reverses each stage', () => {
+  const p = page(); p.value("jobs.get(currentId).hasLesson = true");
+  const blank = { closest: () => null };
+  for (const expected of ['analysis', 'implementation', 'diagram', 'code']) {
+    p.value('lastLevel = 0');
+    p.fire('pointerdown', { target: blank, pointerType: 'mouse' });
+    p.fire('pointerup', { target: blank, pointerType: 'mouse' });
+    assert.equal(p.value('level'), expected);
+    assert.equal(p.value('captureCount'), 0);
+  }
+  for (const expected of ['diagram', 'implementation', 'analysis', 'insight']) {
+    assert.equal(p.value('stepBack()'), true); assert.equal(p.value('level'), expected);
+  }
+  assert.equal(p.value('stepBack()'), false);
+});
+
+test('code selection and lesson controls never start capture for mouse presses', () => {
+  const p = page(); p.value("jobs.get(currentId).hasLesson = true; level = 'code'");
+  p.button.dataset.action = 'lesson'; p.button.touchOnly = false;
+  p.fire('pointerdown', { pointerType: 'mouse' }); p.fire('pointerup', { pointerType: 'mouse' }); p.fire('click', { pointerType: 'mouse' });
+  assert.equal(p.value('press'), null); assert.equal(p.value('captureCount'), 0);
+});
