@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { COMPANY_PROBLEMS, PROBLEMS } from './problem-list.js';
+import { parseLesson } from './lesson.js';
 
 const active = j => ['capturing', 'analyzing'].includes(j.status);
 const now = () => new Date().toISOString();
@@ -10,6 +11,7 @@ const snippet = text => String(text || '').split(/\r?\n/).map(plain).filter(Bool
 
 // The model is asked to open with "标题：…" for the directory page; fall back to its first line when it does not.
 export function splitAnswer(text) {
+  const lesson = parseLesson(text); if (lesson) return lesson;
   const lines = String(text || '').trim().split(/\r?\n/);
   const first = lines.findIndex(l => l.trim());
   if (first < 0) return { title: '', answer: '' };

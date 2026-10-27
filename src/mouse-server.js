@@ -12,6 +12,7 @@ import { COMPANY_PROBLEM_LIST, PROBLEM_LIST } from './problem-list.js';
 import { ANALYZERS, EFFORTS, createProvider } from './providers.js';
 import { RemoteSource } from './remote-source.js';
 import { createVoiceRoutes } from './voice.js';
+import { LESSON_PROMPT } from './lesson.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const staticFiles = { '/': ['index.html', 'text/html'], '/mouse.js': ['mouse.js', 'text/javascript'], '/mouse.css': ['mouse.css', 'text/css'], '/camera': ['camera.html', 'text/html'], '/camera.js': ['camera.js', 'text/javascript'], '/camera.css': ['camera.css', 'text/css'] };
@@ -60,7 +61,7 @@ export const ANSWER_PROMPT = `${SCREENSHOTS}如果其中有题目，直接给出
 7. 看不清或缺少条件的题目写“题号. 无法确定”并用几个字说明原因，不要猜测。
 8. 截图中没有题目时，第一行写“标题：未发现题目”，正文只写“未发现题目”。
 9. ${PHONE_STYLE}`;
-export const answerPrompt = job => worded(ANSWER_PROMPT, job);
+export const answerPrompt = job => worded(ANSWER_PROMPT, job) + LESSON_PROMPT;
 // Asked after a programming problem has been answered, without the screenshots: the comparison is made on what
 // the model itself wrote down as the substance of the problem and on its finished code, not on the wording or the
 // story of the problem. It is asked whether the listed solution would have to change, not for a label: see parseMatch.
