@@ -13,6 +13,7 @@ import { ANALYZERS, EFFORTS, createProvider } from './providers.js';
 import { RemoteSource } from './remote-source.js';
 import { createVoiceRoutes } from './voice.js';
 import { LESSON_PROMPT } from './lesson.js';
+import { demoLesson } from './lesson-demo.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const staticFiles = { '/': ['index.html', 'text/html'], '/mouse.js': ['mouse.js', 'text/javascript'], '/mouse.css': ['mouse.css', 'text/css'], '/camera': ['camera.html', 'text/html'], '/camera.js': ['camera.js', 'text/javascript'], '/camera.css': ['camera.css', 'text/css'] };
@@ -60,8 +61,8 @@ export const ANSWER_PROMPT = `${SCREENSHOTS}如果其中有题目，直接给出
 6. 多张截图的内容有重叠或重复时，每道题只回答一次，按题号顺序排列；被截断的题目结合相邻截图补全后再作答。
 7. 看不清或缺少条件的题目写“题号. 无法确定”并用几个字说明原因，不要猜测。
 8. 截图中没有题目时，第一行写“标题：未发现题目”，正文只写“未发现题目”。
-9. ${PHONE_STYLE}`;
-export const answerPrompt = job => worded(ANSWER_PROMPT, job) + LESSON_PROMPT;
+9. ${PHONE_STYLE}${LESSON_PROMPT}`;
+export const answerPrompt = job => worded(ANSWER_PROMPT, job);
 // Asked after a programming problem has been answered, without the screenshots: the comparison is made on what
 // the model itself wrote down as the substance of the problem and on its finished code, not on the wording or the
 // story of the problem. It is asked whether the listed solution would have to change, not for a label: see parseMatch.
@@ -130,16 +131,12 @@ async function demoAnswer(job) {
   // Every third capture is a set of plain questions, the others a programming problem with its approach level.
   // The approach lines follow the code, as the real prompt asks.
   if (job.seq % 3 === 0) return `标题：演示回答 ${job.seq}（未调用模型）\n\n1. B．演示选项\n2. 42 km\n3. C．演示选项\n本次用到 ${job.frames.length} 张截图。`;
-  // Of the programming problems, every other one stands for code the user had already written: it carries the
-  // "改：" and "补：" comments, and its explanation is the list of places to change.
-  const drafted = job.seq % 2 === 0;
-  const changes = drafted ? ['    // 改：演示用的改动说明，原来的循环少走了最后一步', '    for (int i = 0; i <= itemCount; i++) total += i;', '    // 补：演示用的补充说明，输入为空时直接返回'] : [];
-  const code = ['#include <bits/stdc++.h>', 'using namespace std;', 'int main() {', ...changes, ...Array.from({ length: 34 - changes.length }, (_, i) => `    cout << "演示代码第 ${i + 4 + changes.length} 行，检查每屏行数和滚轮翻页" << endl;`), '    return 0;', '}'];
-  return `标题：演示代码题 ${job.seq}（未调用模型）\n\n类型：代码题\n已有代码：${drafted ? '较完整' : '无'}\n代码：\n\`\`\`cpp\n${code.join('\n')}\n\`\`\`\n题意：演示用的题意，设计一个容量按字节计算的缓存\n分类：链表、哈希表、设计\n思路：哈希表 + 双向链表、哨兵节点、分类讨论`;
+  return JSON.stringify(demoLesson());
 }
 // Of the programming problems, one in two is matched with a company problem, the other with a LeetCode problem.
 async function demoMatch(job) {
   await pause(2500);
+  if (job.lesson) return '候选：1\n比较：两数之和的哈希查找解法相同\n改动：不用改\n结论：1';
   if (job.seq % 3 === 1) return '候选：E1、E7\n比较：演示用的比较，合并规则相同\n改动：不用改\n结论：E1';
   return '候选：146\n比较：演示用的比较，淘汰规则相同，容量的算法不同\n改动：要改：演示用的差异说明，容量改为按字节计算\n结论：146';
 }
@@ -261,6 +258,10 @@ export function createMouseApp(config = {}) {
 
       // Phone page
       if (get && url.pathname === '/api/state') return json(res, 200, snapshot());
+      if (post && url.pathname === '/api/retry') {
+        try { return json(res, 200, { job: store.detail(store.retry(id)) }); }
+        catch (error) { return json(res, 409, { error: error.message }); }
+      }
       if (post && url.pathname === '/api/capture') {
         const text = (await body(req, 2000)).toString(), mode = text && JSON.parse(text).mode === 'burst' ? 'burst' : 'single';
         if (!source.online) return json(res, 409, { error: '截图端未连接：请在被截图的电脑上启动采集器' });
@@ -435,3 +436,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     for (const address of addresses) console.log(`手机浏览器打开 ${scheme}://${address}:${port} 并输入配对码；截图端地址填 ${scheme}://${address}:${port}；拍照用的手机或平板打开 ${scheme}://${address}:${port}/camera`);
   });
 }
+

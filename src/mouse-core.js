@@ -110,8 +110,15 @@ export class JobStore extends EventEmitter {
   get capturing() { return this.state.jobs.find(j => j.status === 'capturing'); }
   get pending() { return this.state.jobs.filter(active).length; }
   // List entries leave out the long texts; the page loads them when a record is opened.
-  summary(j) { const { answer, explanation, ...rest } = this.detail(j); return rest; }
-  detail(j) { const { frames, systemPrompt, ...rest } = j; return { ...rest, frameCount: frames.length, hasExplanation: j.explanation !== undefined, snippet: brief(j) }; }
+  summary(j) { const { answer, explanation, lesson, ...rest } = this.detail(j); return rest; }
+  detail(j) { const { frames, systemPrompt, ...rest } = j; return { ...rest, frameCount: frames.length, hasExplanation: j.explanation !== undefined, hasLesson: !!j.lesson, snippet: brief(j) }; }
+
+  retry(id) {
+    const j = this.job(id);
+    if (!j || j.status !== 'failed' || !j.frames.length || this.running.has(id)) throw Error('只有已失败且保留图片的任务可以重试');
+    for (const key of ['error', 'finishedAt', 'answer', 'explanation', 'lesson', 'insights', 'kind', 'title', 'matchStatus', 'matchError', 'matchStartedAt', 'timedOut']) delete j[key];
+    j.status = 'analyzing'; this.changed(j); this.pump(); return j;
+  }
 
   create(mode = 'single') {
     const job = { id: randomUUID(), seq: ++this.state.seq, mode, status: 'capturing', engine: this.engine(), systemPrompt: this.prompt() || '', createdAt: now(), frames: [], shots: 0 };
