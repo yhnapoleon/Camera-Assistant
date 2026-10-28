@@ -99,7 +99,7 @@ const DRAFT = { part: '部分', full: '较完整' };
 const drafts = job => (job.insights || []).filter(i => DRAFT[i.draft]).map(i => `${i.no ? `第 ${i.no} 题` : ''}${DRAFT[i.draft]}`).join('，');
 // For a programming problem the user had already written, the explanation is not a walk through the solution:
 // it says what their code still lacks and names each place to change, with the reason.
-export const explainPrompt = job => `${SCREENSHOTS}此前已经给出下面的答案：
+export const explainPrompt = job => job.lesson?.answer ? `${SCREENSHOTS}这是同一批题目中普通题的已有答案：\n${job.lesson.answer}\n只解释这些普通题，按题号给出答案、关键依据和必要步骤；不要重复编程题的代码或学习内容。发现错误请明确更正；缺少条件时说明，不能猜测。${PHONE_STYLE}` : `${SCREENSHOTS}此前已经给出下面的答案：
 <答案>
 ${job.answer}
 </答案>
@@ -210,7 +210,7 @@ export function createMouseApp(config = {}) {
   // Every screenshot is its own single-shot batch for the agent; a long press is a series of them.
   const requestShot = shot => source.push({ type: 'capture', batch: { id: shot, mode: 'single' } });
   const maxFrames = config.maxFrames || 12;
-  const store = new JobStore({ analyze, match, explain, requestShot, prompt: readPrompt, engine: () => engine.id, stateFile: path.join(dataDir, 'state.json'), concurrency: config.concurrency || 2, captureTimeout: config.captureTimeout || 12000, interval: config.interval || 500, maxFrames, holdTimeout: config.holdTimeout || 3000 });
+  const store = new JobStore({ analyze, match, explain, requestShot, prompt: readPrompt, engine: () => engine.id, stateFile: path.join(dataDir, 'state.json'), requireLesson: config.requireLesson !== false, concurrency: config.concurrency || 2, captureTimeout: config.captureTimeout || 12000, interval: config.interval || 500, maxFrames, holdTimeout: config.holdTimeout || 3000 });
   // Photos from the camera page wait here, batch by batch, until a batch is submitted and becomes one job.
   // What is left behind (a closed page, a restart) is removed after a while, or at the next start.
   const incomingDir = path.join(dataDir, 'incoming'); rmSync(incomingDir, { recursive: true, force: true }); mkdirSync(incomingDir, { recursive: true });

@@ -17,7 +17,7 @@ function setup() {
   const lesson = splitAnswer(JSON.stringify(lessonFixture())).lesson;
   const events = [];
   const render = (state = {}) => {
-    const root = window.LessonView.render(lesson, { stage: 'analysis', problemIndex: 0, mode: 'leetcode', ...state }, { navigate: stage => events.push(['stage', stage]), problem: i => events.push(['problem', i]), mode: mode => events.push(['mode', mode]), copy: text => events.push(['copy', text]), step: id => events.push(['step', id]) });
+    const root = window.LessonView.render(lesson, { stage: 'analysis', problemIndex: 0, mode: 'leetcode', ...state }, { navigate: stage => events.push(['stage', stage]), problem: i => events.push(['problem', i]), mode: mode => events.push(['mode', mode]), copy: text => events.push(['copy', text]), step: id => events.push(['step', id]), explain: () => events.push(['explain']) });
     document.body.replaceChildren(root); return root;
   };
   return { document, window, lesson, events, render };
@@ -65,4 +65,6 @@ test('question selection and mixed ordinary answers remain available without com
   assert.match(root.textContent, /第二道编程题/); assert.match(root.textContent, /2. B. 普通题/);
   root.querySelector('[data-problem="0"]').click(); assert.deepEqual(p.events.pop(), ['problem', 0]);
   assert.equal(root.querySelector('[data-stage="insight"]').getAttribute('aria-current'), 'step');
+  assert.ok(root.querySelector('[data-ordinary-explain]'));
+  root.querySelector('[data-ordinary-explain]').click(); assert.deepEqual(p.events.pop(), ['explain']);
 });

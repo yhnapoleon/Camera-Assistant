@@ -113,7 +113,7 @@
     if (stage === 'insight') {
       root.append(section('题目类型', problem.categories.join(' · ')), section('解法路径', problem.approaches.join(' → ')));
       if (problem.draft !== 'none') root.append(section('已有代码', '解法沿用已有代码补全或修正。代码中的“改：”“补：”标记说明修改原因。'));
-      if (lesson.answer) root.append(section('同批其他题目', lesson.answer));
+      if (lesson.answer) { const ordinary = section('同批其他题目', lesson.answer); ordinary.append(button('查看普通题解析', () => callbacks.explain(), { ordinaryExplain: 'true' })); root.append(ordinary); }
     } else if (stage === 'analysis') {
       root.append(section('题目类型', problem.categories.join(' · ')), section('为什么使用这个方法', problem.analysis.why, 'method-reason'), section('为什么这样做是正确的', problem.analysis.correctness));
       const costs = el('div', undefined, 'lesson-costs'); costs.append(section('时间复杂度', problem.analysis.time), section('空间复杂度', problem.analysis.space)); root.append(costs);

@@ -58,7 +58,10 @@ export function validateLesson(data) {
 export function parseLesson(raw) {
   let source = String(raw || '').trim();
   if (/^```(?:json)?\s*\n/i.test(source)) source = source.replace(/^```(?:json)?\s*\n/i, '').replace(/\n```\s*$/, '').trim();
-  if (!source.startsWith('{')) return null;
+  if (!source.startsWith('{')) {
+    if (/"(?:version|problems)"\s*:/.test(source) || /```json/i.test(source)) fail('结构化回答前有多余内容或已被截断');
+    return null;
+  }
   if (source.length > 600000) fail('内容过长');
   let payload; try { payload = JSON.parse(source); } catch { fail('JSON 被截断或格式不正确'); }
   const lesson = validateLesson(payload);

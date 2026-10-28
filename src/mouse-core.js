@@ -10,7 +10,7 @@ const plain = s => String(s || '').replace(/^[#>\s*-]+/, '').replace(/[*`]/g, ''
 const snippet = text => String(text || '').split(/\r?\n/).map(plain).filter(Boolean).join(' ').slice(0, 90);
 
 // The model is asked to open with "标题：…" for the directory page; fall back to its first line when it does not.
-export function splitAnswer(text) {
+export function splitAnswer(text, { requireLesson = false } = {}) {
   const lesson = parseLesson(text); if (lesson) return lesson;
   const lines = String(text || '').trim().split(/\r?\n/);
   const first = lines.findIndex(l => l.trim());
@@ -18,7 +18,9 @@ export function splitAnswer(text) {
   const titled = lines[first].match(/^[#*\s]*标题\**\s*[:：]\s*(.+)$/);
   const rest = lines.slice(first + 1).join('\n').trim();
   const base = titled && rest ? { title: plain(titled[1]).slice(0, 60), answer: rest } : { title: plain(lines[first]).slice(0, 60), answer: lines.join('\n').trim() };
-  return { ...base, ...codeAnswer(base.answer) };
+  const result = { ...base, ...codeAnswer(base.answer) };
+  if (requireLesson && (result.kind === 'code' || /类型\s*[:：]\s*代码题|```(?:python|py|cpp|c\+\+|java|javascript|typescript|go|rust|csharp)\b/i.test(base.answer))) throw Error('学习内容不完整：编程题未返回新版分析、图解及双模式代码。请重试生成。');
+  return result;
 }
 
 const tags = value => plain(value).split(/[、，,；;/|｜]+/).map(s => s.trim()).filter(Boolean).slice(0, 6);
@@ -82,8 +84,9 @@ export function sameFrame(a, b, limit = 8) {
 // Photos sent from the camera page skip capturing: submit() makes a job of them that starts at analyzing.
 // engine() names the model chosen at that moment; a job keeps it, so everything asked about it later goes to the same one.
 export class JobStore extends EventEmitter {
-  constructor({ analyze, match, explain, requestShot = () => {}, prompt = () => '', engine = () => undefined, stateFile, concurrency = 2, captureTimeout = 12000, lateWindow = 60000, interval = 500, maxFrames = 12, holdTimeout = 3000, maxHold = 60000 } = {}) {
+  constructor({ analyze, match, explain, requestShot = () => {}, prompt = () => '', engine = () => undefined, stateFile, requireLesson = false, concurrency = 2, captureTimeout = 12000, lateWindow = 60000, interval = 500, maxFrames = 12, holdTimeout = 3000, maxHold = 60000 } = {}) {
     super(); Object.assign(this, { analyze, matcher: match, explainer: explain, requestShot, prompt, engine, stateFile, concurrency, captureTimeout, lateWindow, interval, maxFrames, holdTimeout, maxHold });
+    this.requireLesson = requireLesson;
     this.state = { seq: 0, jobs: [] }; this.running = new Map(); this.explaining = new Map();
     this.live = new Map();   // capturing job id -> { holding, heldAt, shot, shotAt, last, error, timeout, next, guard }
     this.shots = new Map();  // screenshot request id -> job id
@@ -199,7 +202,7 @@ export class JobStore extends EventEmitter {
     const controller = new AbortController(), signal = controller.signal;
     const done = (async () => {
       try {
-        const parsed = splitAnswer(await this.analyze(j, { signal }));
+        const parsed = splitAnswer(await this.analyze(j, { signal }), { requireLesson: this.requireLesson });
         if (!parsed.answer) throw Error('模型未返回文字');
         if (j.status !== 'analyzing') return;
         Object.assign(j, { status: 'done', ...parsed, finishedAt: now() });

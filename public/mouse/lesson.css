@@ -13,6 +13,7 @@
 .lesson-costs{display:grid;grid-template-columns:1fr 1fr;gap:16px}.lesson-muted{color:var(--muted);font-size:13px;line-height:1.7}
 .step-card button{margin-top:12px}.lesson-footer{justify-content:space-between;margin-top:24px}
 .diagram-viewport{overflow:auto;border:1px solid var(--line);border-radius:10px;max-height:65vh;background:var(--bg);touch-action:pan-x pan-y pinch-zoom}
+.turned .diagram-viewport{max-height:calc(var(--vw) * .65)}.turned .diagram-viewport,.turned .source-code{touch-action:pinch-zoom}
 .lesson-graph{display:block;max-width:none;height:auto;margin:0 auto}.diagram-node{fill:var(--card);stroke:var(--green);stroke-width:1.5}
 .lesson-graph [role=button]{cursor:pointer}.lesson-graph [role=button]:focus .diagram-node,.lesson-graph [role=button]:hover .diagram-node{stroke-width:3}
 .diagram-node-label{fill:var(--ink);font-size:16px}.diagram-step{fill:var(--green);font-weight:700;font-size:15px}.diagram-edge-label{fill:var(--muted);font-size:12px}

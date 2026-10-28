@@ -51,3 +51,12 @@ test('legacy answers and ordinary questions stay readable', () => {
   const old = splitAnswer('标题：旧题\n类型：代码题\n代码：\n```python\nprint(1)\n```\n题意：输出 1\n分类：模拟\n思路：输出');
   assert.equal(old.kind, 'code'); assert.equal(old.lesson, undefined);
 });
+
+test('prefaced malformed lessons and legacy-shaped new code responses cannot bypass the required lesson protocol', () => {
+  const broken = '以下是完整学习内容：\n' + JSON.stringify(lessonFixture()).slice(0, 160);
+  assert.throws(() => splitAnswer(broken, { requireLesson: true }), /学习内容/);
+  const legacy = '标题：旧格式\n类型：代码题\n代码：\n```python\nprint(1)\n```\n题意：输出1\n分类：模拟\n思路：直接输出';
+  assert.throws(() => splitAnswer(legacy, { requireLesson: true }), /学习内容/);
+  assert.equal(splitAnswer(legacy).kind, 'code', 'explicit legacy parsing remains available');
+  assert.equal(splitAnswer('标题：普通题\n2. B', { requireLesson: true }).answer, '2. B');
+});

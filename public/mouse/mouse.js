@@ -29,6 +29,7 @@ let lessonProblem = 0, lessonMode = 'leetcode';
 const lessonStages = ['insight', 'analysis', 'implementation', 'diagram', 'code'];
 const stageNames = { insight: '概览', analysis: '思路分析', implementation: '具体实现', diagram: '结构图解', code: '代码' };
 const hasLesson = job => !!(job?.hasLesson || job?.lesson);
+const openModal = () => document.querySelector?.('dialog[open]') || ($('settings').open ? $('settings') : null);
 let pitch = 25, scrollTarget = null, targetTimer, markTimer, lastFlip = 0;   // pitch: height of one text line in px
 let pointerType = matchMedia('(any-pointer: fine)').matches ? 'mouse' : 'touch', press = null, clickTimer = null, lastOpen = 0, lastTrigger = 0, lastRight = 0, sending = false, toastTimer, wakeLock;
 let lastPointerInput = null;
@@ -185,6 +186,12 @@ function showDetail() {
   if (job.explanation === undefined) { if (job.hasExplanation) load(job.id); else if (job.explainStatus !== 'running') requestExplain(job.id); }
   render();
 }
+function showOrdinaryDetail() {
+  const job = jobs.get(currentId); if (!job?.lesson?.answer) return;
+  detail = wantDetail = true;
+  if (job.explanation === undefined) { if (job.hasExplanation) load(job.id); else if (job.explainStatus !== 'running') requestExplain(job.id); }
+  render();
+}
 function hideDetail() { detail = wantDetail = false; scrollTarget = null; render(); scroller.scrollTop = 0; track(); }
 // Bring the explanation to the top line; repeated when its text arrives, because only then is there enough below it.
 function toDetail() { const section = $('detail'); if (section) glide(Math.floor(section.offsetTop / pitch) * pitch); }
@@ -254,7 +261,7 @@ async function showImage(id, n, img, figure) {
 // Right button: one step back each time. Explanation -> code -> approach (programming problems) -> directory.
 function right() {
   const now = Date.now(); if (now - lastRight < 400) return; lastRight = now; note('右键');
-  if ($('settings').open) { $('settings').close(); return; }
+  const modal = openModal(); if (modal) { modal.close(); return; }
   if (view === 'answer' && !stepBack()) leaveAnswer();
 }
 const actions = {
@@ -307,7 +314,7 @@ function endPress(event, cancelled) {
 }
 document.addEventListener('pointerdown', e => {
   const type = e.sourceCapabilities?.firesTouchEvents ? 'touch' : e.pointerType || 'mouse'; rememberInput(e, type);
-  if (!entered || $('settings').open || type !== 'mouse' || e.button !== 0 || control(e.target, type)) return;
+  if (!entered || openModal() || type !== 'mouse' || e.button !== 0 || control(e.target, type)) return;
   endPress(null, true);
   const p = press = { pointer: e.pointerId, burst: null };
   if (!(view === 'answer' && level !== 'code')) p.timer = setTimeout(() => { if (press === p) startBurst(p); }, LONG_MS);
@@ -333,17 +340,19 @@ document.addEventListener('contextmenu', e => {
 document.addEventListener('click', e => {
   if (!entered || $('settings').open) return;
   const type = clickInput(e);
-  if (type !== 'mouse' && Date.now() < suppressTouchClickUntil) return;
+  if (type !== 'mouse' && Date.now() < suppressTouchClickUntil) { e.preventDefault?.(); e.stopImmediatePropagation?.(); return; }
   const found = control(e.target, type); if (!found) return;
   note(type === 'mouse' ? '左键' : '触摸'); actions[found.dataset.action]?.(found);
-});
+}, { capture: true });
 // Native touch panning is unreliable inside the 90-degree rotated overflow area.
 // Project screen movement onto the page's vertical axis; normal orientation stays native.
 scroller.addEventListener('touchstart', e => {
   touchScroll = null; suppressTouchClickUntil = 0;
   if (!entered || $('settings').open || !root.classList.contains('turned') || e.touches.length !== 1 || e.target.closest?.('button,input,select,textarea,a')) return;
   const finger = e.touches[0];
-  touchScroll = { id: finger.identifier, x: finger.clientX, top: scroller.scrollTop, flipped: root.classList.contains('flipped'), moved: false };
+  const diagram = e.target.closest?.('.diagram-viewport'), code = e.target.closest?.('.source-code');
+  const vertical = diagram || scroller, horizontal = diagram || code;
+  touchScroll = { id: finger.identifier, x: finger.clientX, y: finger.clientY, vertical, horizontal, top: vertical.scrollTop, left: horizontal?.scrollLeft || 0, flipped: root.classList.contains('flipped'), moved: false };
   scrollTarget = null; clearTimeout(targetTimer);
 }, { passive: true });
 scroller.addEventListener('touchmove', e => {
@@ -351,10 +360,13 @@ scroller.addEventListener('touchmove', e => {
   if (e.touches.length !== 1 || !root.classList.contains('turned') || document.getSelection?.()?.isCollapsed === false) { touchScroll = null; return; }
   const finger = e.touches[0]; if (finger.identifier !== touchScroll.id) return;
   const delta = (finger.clientX - touchScroll.x) * (touchScroll.flipped ? -1 : 1);
-  if (!touchScroll.moved && Math.abs(delta) < 8) return;
+  const across = (finger.clientY - touchScroll.y) * (touchScroll.flipped ? 1 : -1);
+  if (!touchScroll.moved && Math.abs(delta) < 8 && (!touchScroll.horizontal || Math.abs(across) < 8)) return;
   touchScroll.moved = true;
   if (e.cancelable) e.preventDefault();
-  scroller.scrollTop = Math.max(0, Math.min(Math.max(0, scroller.scrollHeight - scroller.clientHeight), touchScroll.top + delta));
+  const { vertical, horizontal } = touchScroll;
+  vertical.scrollTop = Math.max(0, Math.min(Math.max(0, vertical.scrollHeight - vertical.clientHeight), touchScroll.top + delta));
+  if (horizontal) horizontal.scrollLeft = Math.max(0, Math.min(Math.max(0, horizontal.scrollWidth - horizontal.clientWidth), touchScroll.left + across));
 }, { passive: false });
 function finishTouchScroll() {
   if (touchScroll?.moved) suppressTouchClickUntil = Date.now() + 500;
@@ -372,7 +384,7 @@ $('app').addEventListener('wheel', e => {
 }, { passive: false });
 scroller.addEventListener('scroll', () => requestAnimationFrame(mark), { passive: true });
 addEventListener('resize', orient);
-document.addEventListener('keydown', e => { if (entered && e.key === 'Escape' && !$('settings').open) right(); });
+document.addEventListener('keydown', e => { if (entered && e.key === 'Escape' && !openModal()) right(); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') { endPress(null, true); return; }
   if (!entered) return;
@@ -531,7 +543,9 @@ function renderAnswer() {
         mode: mode => { lessonMode = mode; shownKey = ''; render(); },
         copy: copyCode,
         step: focusStep,
+        explain: showOrdinaryDetail,
       }));
+      if (detail) box.append(detailSection(job));
       if (level === 'insight') {
         const item = job.insights?.[lessonProblem];
         if (item?.origin) box.append(el('p', `题单对照：${matched(item.origin)}`, 'note'));
@@ -576,9 +590,11 @@ function focusStep(id) {
 async function copyCode(text) {
   try { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); toast('已复制'); return; } } catch {}
   const dialog = document.createElement('dialog'), field = el('textarea', undefined, 'copy-fallback'), close = el('button', '关闭');
+  dialog.dataset.action = 'lesson';
   field.value = text; field.readOnly = true; field.setAttribute('aria-label', '待复制内容');
   dialog.append(el('p', '内容已选中，可长按复制或按 Ctrl+C。'), field, close); document.body.append(dialog);
   close.onclick = () => { dialog.close(); dialog.remove(); };
+  dialog.addEventListener('close', () => dialog.remove());
   dialog.addEventListener('cancel', () => dialog.remove()); dialog.showModal(); field.focus(); field.select();
   try { if (document.execCommand('copy')) { dialog.close(); dialog.remove(); toast('已复制'); } } catch {}
 }
