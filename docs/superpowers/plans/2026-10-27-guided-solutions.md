@@ -46,7 +46,7 @@ Files: README.md, demo fixture/server and tests as needed.
 - [x] Run npm test; inspect and resolve failures.
 - [x] Inspect representative lesson in browser: all stages, both modes, return navigation, sample input/output and graph.
 - [x] Fresh reviewer audits changed files vs approved design; resolve material issues with regression tests.
-- [x] Document exact limitations, check active production jobs before restart, restart service and verify live HTTP/WS.
+- [x] Document exact limitations, check active production jobs, launch the updated service and verify live HTTP/WS.
 
 ## Execution ledger
 Ruling: implement in the explicitly named project on its clean feature branch so the user's local service uses the result; no worktree or branch migration.
@@ -61,4 +61,4 @@ Browser evidence: 1280×720 preview exercised overview→analysis→implementati
 Dependency note: npm audit reports the pre-existing sharp 0.34.x vulnerability; no unrelated major image-library upgrade made during this feature.
 
 Final review: reviewer independently verified reported fixes; 25/25 focused tests pass. Whole suite 110/110 passes. Real gpt-5.6-sol smoke generated one complete three-step lesson in 20 seconds; after inspection both Python variants executed locally and matched their declared sample outputs. Production app itself never executes generated programs.
-
+Launch: automatic approval rejected stopping the existing Node service with only “blocked by policy”; no stop was performed. The updated service runs separately on HTTP 8793 / HTTPS 8794, using data/mouse-guided-20261028, an isolated copy of the 100 historical records and images. Original service 8790 and its data remain intact. LAN HTTP checks returned 200 for the page, renderer, styles, highlighter and authenticated state; authenticated WebSocket hello returned all 100 records. Screenshot collectors must point to port 8793 to create new lessons here; new records in the two services do not synchronize. Physical tablet testing remains outstanding.
