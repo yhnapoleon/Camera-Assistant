@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
+test('problem sources distinguish Huawei written exams from existing interview problems', () => {
+  const p = page();
+  assert.equal(p.value("sourced({company:'华为',kind:'笔试'})"), '华为笔试');
+  assert.equal(p.value("sourced({company:'字节'})"), '字节手撕');
+});
+
 // Run the real page handlers without a browser or model calls. Only DOM rendering is stubbed.
 function page() {
   const handlers = new Map(), elements = new Map();

@@ -56,13 +56,13 @@ export function parseMatch(text) {
     if (m[1] === '改动') { change = plain(m[2]).replace(/^[“"「]|[”"」。.]$/g, ''); continue; }
     const id = m[2].match(/\bE\d+\b/i)?.[0].toUpperCase(), company = COMPANY_PROBLEMS.get(id), listed = id ? company : PROBLEMS.get(m[2].match(/\d+/)?.[0]);
     const relation = !listed ? 'none' : /^不用改/.test(change) ? 'same' : /^要改/.test(change) ? 'variant' : 'none';
-    found.push({ relation, problem: company ? company.title : listed ? `${listed.no}. ${listed.title}` : '', hot: !!listed?.hot, note: relation === 'variant' ? change.replace(/^要改[”"」]?\s*[:：，,]?\s*/, '') : '', ...company && { company: company.company } });
+    found.push({ relation, problem: company ? company.title : listed ? `${listed.no}. ${listed.title}` : '', hot: !!listed?.hot, note: relation === 'variant' ? change.replace(/^要改[”"」]?\s*[:：，,]?\s*/, '') : '', ...company && { company: company.company }, ...company?.kind && { kind: company.kind } });
     change = '';
   }
   return found;
 }
 const relation = { same: '原题', variant: '变式', none: '不在题单' };
-const verdict = o => o ? [`${relation[o.relation]}${o.relation !== 'none' && o.problem ? ` ${o.problem}${o.company ? `（${o.company}手撕）` : ''}` : ''}`] : [];
+const verdict = o => o ? [`${relation[o.relation]}${o.relation !== 'none' && o.problem ? ` ${o.problem}${o.company ? `（${o.company}${o.kind || '手撕'}）` : ''}` : ''}`] : [];
 const brief = j => j.insights?.length ? j.insights.map(i => [...verdict(i.origin), ...i.categories, ...i.approaches].join(' · ')).join('；').slice(0, 120) : snippet(j.answer);
 
 // a, b: square greyscale thumbnails of two screenshots. Compared in 8×8 blocks, so a blinking caret or a

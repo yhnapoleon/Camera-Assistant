@@ -14,6 +14,7 @@ import { RemoteSource } from './remote-source.js';
 import { createVoiceRoutes } from './voice.js';
 import { LESSON_PROMPT } from './lesson.js';
 import { demoLesson } from './lesson-demo.js';
+import { REFERENCE_PROMPT } from './reference-problems.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const staticFiles = { '/': ['index.html', 'text/html'], '/mouse.js': ['mouse.js', 'text/javascript'], '/mouse.css': ['mouse.css', 'text/css'], '/camera': ['camera.html', 'text/html'], '/camera.js': ['camera.js', 'text/javascript'], '/camera.css': ['camera.css', 'text/css'] };
@@ -63,7 +64,7 @@ export const ANSWER_PROMPT = `${SCREENSHOTS}如果其中有题目，直接给出
 7. 看不清或缺少条件的题目写“题号. 无法确定”并用几个字说明原因，不要猜测。
 8. 截图中没有题目时，第一行写“标题：未发现题目”，正文只写“未发现题目”。
 9. ${PHONE_STYLE}${LESSON_PROMPT}`;
-export const answerPrompt = job => worded(ANSWER_PROMPT, job);
+export const answerPrompt = job => worded(ANSWER_PROMPT, job) + REFERENCE_PROMPT;
 // Asked after a programming problem has been answered, without the screenshots: the comparison is made on what
 // the model itself wrote down as the substance of the problem and on its finished code, not on the wording or the
 // story of the problem. It is asked whether the listed solution would have to change, not for a label: see parseMatch.
@@ -78,7 +79,7 @@ ${job.insights.map(solved).join('\n\n')}
 
 ${job.answer}
 </解答>
-请判断每道题与文末题单的关系。题单分两部分：力扣题只列了题号和题名，这些题你都熟悉；企业手撕题是公司面试里要求手写的题，不在力扣题那一部分里，你不一定见过，每道题后面写了它的题意，以写出的题意为准，不要只凭题名判断。要比较的是题目的实质和解法，不是题名、故事背景或个别关键词。
+请判断每道题与文末题单的关系。题单分两部分：力扣题只列了题号和题名，这些题你都熟悉；企业题包含面试手撕题和用户录入的笔试题，不在力扣题那一部分里，你不一定见过，每道题后面写了它的题意，以写出的题意为准，不要只凭题名判断。要比较的是题目的实质和解法，不是题名、故事背景或个别关键词。
 每道题依次输出四行，每行以给定的词和冒号开头：
 候选：题单中最可能与这道题是同一道题或同一类题的题号，最多 3 个，用顿号分隔；一个都没有就写“无”。企业手撕题的题号是字母 E 加数字，照原样写。
 比较：拿最接近的那个候选，对比要求输出的内容、限制条件和主要解法，写出相同和不同之处，不超过 50 个字。
@@ -89,7 +90,7 @@ ${job.answer}
 结论：最接近的那个候选的题号，也就是拿它的标准解法来解这道题、要改的地方最少的那个；没有候选就写“无”。只有一道企业手撕题和一道力扣题都“不用改”、分不出远近时，才优先写企业手撕题的题号。
 题号只能写题单里出现的题号。有多道题时，每道题先写一行“题号：N”，再写这四行。除这些行以外不要输出别的内容。
 
-企业手撕题（题号 题名｜出题公司｜题意）：
+企业手撕题与笔试题（题号 题名｜出题公司｜题意）：
 ${COMPANY_PROBLEM_LIST}
 
 力扣题（分组：题号 题名）：

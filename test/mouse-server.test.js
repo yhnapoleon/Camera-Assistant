@@ -6,6 +6,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import WebSocket from 'ws';
+import { REFERENCE_PROMPT } from '../src/reference-problems.js';
 import sharp from 'sharp';
 import { ANSWER_PROMPT, answerPrompt, createMouseApp, explainPrompt, matchPrompt, parseModels } from '../src/mouse-server.js';
 
@@ -183,7 +184,7 @@ test('a second device sends photos, one or a batch, and they are answered and sh
   assert.equal((await s.call('/api/camera/photo?batch=b3&n=0', { method: 'POST', body: 'not a picture' })).status, 400);
   await photo('b4', 0); await photo('b4', 1); assert.equal(readdirSync(incoming).length, 2);
   assert.equal((await s.post('/api/camera/discard?batch=b4')).status, 200); assert.equal(readdirSync(incoming).length, 0);
-  assert.equal(answerPrompt({ mode: 'single' }), ANSWER_PROMPT);
+  assert.equal(answerPrompt({ mode: 'single' }), ANSWER_PROMPT + REFERENCE_PROMPT);
   assert.ok(answerPrompt({ mode: 'camera' }).startsWith('这是同一次操作中用手机或平板拍摄的照片') && !answerPrompt({ mode: 'camera' }).includes('截图'), 'the model is told these are photos');
   p.ws.close();
 });

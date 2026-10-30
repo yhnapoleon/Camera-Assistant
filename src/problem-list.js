@@ -1,3 +1,5 @@
+import { REFERENCE_PROBLEMS } from './reference-problems.js';
+
 // The LeetCode problems that programming answers are compared with: the 200 of AlgoMooc 200
 // (https://www.algomooc.com/leetcode-animation/algomooc200) in its groups and order, plus the three problems of
 // LeetCode 热题 100 that it leaves out (41, 108, 118). Titles are the ones on leetcode.cn. * marks 热题 100.
@@ -30,8 +32,8 @@ export const PROBLEMS = new Map(LIST.split('\n').flatMap(line => {
 export const PROBLEM_LIST = LIST.replace(/\*/g, '');
 
 // Hand-coding problems that companies ask in interviews and that have no LeetCode number, or none on the list above:
-// taken from interview reports, see docs/企业手撕题.md for where each was reported and how often. So far all are
-// from 字节 interviews. The model cannot know such a problem by its title, so each line carries what is asked, in the
+// taken from interview reports, see docs/企业手撕题.md for where each was reported and how often. E1–E28 are
+// from 字节 interviews; user-supplied written exams are appended below. Each line carries what is asked, in the
 // form most often reported: 题号 题名｜公司｜题意. A problem that is in substance one of the LeetCode problems above
 // is left out (检测循环依赖 is 207 / 210), so that it is still shown as that problem.
 const COMPANY_LIST = `E1 合并嵌套 JSON｜字节｜给两个嵌套的 JSON（字典、列表、基本类型），返回合并后的新对象，不修改原数据：两边都有的键，值都是字典就递归合并，都是列表就拼接；只在一边出现的键直接保留。完整的规则常见还有数字相加、字符串拼接、布尔值取或、其余类型用后一个覆盖
@@ -65,5 +67,6 @@ E28 手写 Agent Loop｜字节｜用代码或伪代码写出 ReAct 式的 Agent 
 
 // number -> { no, title, company, gist }
 export const COMPANY_PROBLEMS = new Map(COMPANY_LIST.split('\n').map(line => { const [, no, title, company, gist] = line.match(/^(E\d+) (.+?)｜(.+?)｜(.+)$/); return [no, { no, title, company, gist }]; }));
+for (const { no, title, company, gist, kind } of REFERENCE_PROBLEMS) COMPANY_PROBLEMS.set(no, { no, title, company, gist, kind });
 // The list as it is sent to the model.
-export const COMPANY_PROBLEM_LIST = COMPANY_LIST;
+export const COMPANY_PROBLEM_LIST = [COMPANY_LIST, ...REFERENCE_PROBLEMS.map(p => `${p.no} ${p.title}｜${p.company}｜${p.gist}`)].join('\n');

@@ -492,7 +492,7 @@ function detailSection(job) {
 }
 const RELATION = { same: '原题', variant: '变式', none: '不在题单' };
 // A problem a company asks that is not on LeetCode carries the company instead of a number.
-const sourced = origin => origin.company ? `${origin.company}手撕` : '';
+const sourced = origin => origin.company ? `${origin.company}${origin.kind || '手撕'}` : '';
 const matched = origin => origin ? `${RELATION[origin.relation]}${origin.problem ? ` ${origin.relation === 'none' ? '最接近 ' : ''}${origin.problem}${origin.company ? `（${sourced(origin)}）` : ''}` : ''}` : '';
 // Approach level of a programming problem: how it relates to the problem list, then category and approach tags.
 // Set large, two grid lines per row, to be taken in at a glance before going on to the code. The code is
