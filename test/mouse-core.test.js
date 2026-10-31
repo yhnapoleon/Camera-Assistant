@@ -67,12 +67,12 @@ test('the match follows from whether the closest listed solution has to change; 
 });
 
 test('company problems are numbered E1 on, each with its company and what it asks, apart from the LeetCode numbers', () => {
-  assert.equal(COMPANY_PROBLEMS.size, 28); assert.deepEqual([...COMPANY_PROBLEMS.keys()], Array.from({ length: 28 }, (_, i) => `E${i + 1}`));
+  assert.equal(COMPANY_PROBLEMS.size, 30); assert.deepEqual([...COMPANY_PROBLEMS.keys()], Array.from({ length: 30 }, (_, i) => `E${i + 1}`));
   for (const p of COMPANY_PROBLEMS.values()) { assert.ok(p.title && p.company && p.gist.length >= 20, `${p.no} is complete`); assert.ok(!PROBLEMS.has(p.no)); }
-  assert.equal(new Set([...COMPANY_PROBLEMS.values()].map(p => p.title)).size, 28, 'each problem once');
+  assert.equal(new Set([...COMPANY_PROBLEMS.values()].map(p => p.title)).size, 30, 'each problem once');
   assert.ok(![...PROBLEMS.values()].some(l => [...COMPANY_PROBLEMS.values()].some(c => c.title === l.title)), 'none repeats a listed LeetCode problem');
   assert.deepEqual([COMPANY_PROBLEMS.get('E1').title, COMPANY_PROBLEMS.get('E1').company], ['合并嵌套 JSON', '字节']);
-  assert.equal(COMPANY_PROBLEM_LIST.split('\n').length, 28); assert.ok(COMPANY_PROBLEM_LIST.startsWith('E1 合并嵌套 JSON｜字节｜给两个嵌套的 JSON'));
+  assert.equal(COMPANY_PROBLEM_LIST.split('\n').length, 30); assert.ok(COMPANY_PROBLEM_LIST.startsWith('E1 合并嵌套 JSON｜字节｜给两个嵌套的 JSON'));
 });
 
 test('a company problem is matched by its E number, named by its title and marked with its company', async () => {

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import WebSocket from 'ws';
+import { REFERENCE_PROMPT } from '../src/reference-problems.js';
 import sharp from 'sharp';
 import { ANSWER_PROMPT, answerPrompt, createMouseApp, explainPrompt, matchPrompt, parseModels } from '../src/mouse-server.js';
 
@@ -92,7 +93,7 @@ test('the explanation is produced only when asked for, from the screenshots and 
 test('a programming answer reaches the phone with its code first; the problem list match follows from that answer', async t => {
   const code = '```py\nprint(1)\n```'; let open; const gate = new Promise(r => { open = r; });
   const analyze = async () => `标题：每日温度\n\n类型：代码题\n代码：\n${code}\n题意：求每天之后第一个更高温度的距离\n分类：栈\n思路：单调栈`;
-  const s = await start(t, { analyze, match: async job => { await gate; return `候选：739\n比较：${job.insights[0].summary}，相同\n改动：不用改\n结论：739`; } }), a = await agent(s), p = await phone(s.base);
+  const s = await start(t, { analyze, requireLesson: false, match: async job => { await gate; return `候选：739\n比较：${job.insights[0].summary}，相同\n改动：不用改\n结论：739`; } }), a = await agent(s), p = await phone(s.base);
   await s.capture(); await a.shoot();
   const answered = (await p.until(e => e.type === 'job' && e.job.status === 'done')).job;
   assert.equal(answered.answer, code); assert.equal(answered.kind, 'code'); assert.equal(answered.matchStatus, 'running');
@@ -183,7 +184,7 @@ test('a second device sends photos, one or a batch, and they are answered and sh
   assert.equal((await s.call('/api/camera/photo?batch=b3&n=0', { method: 'POST', body: 'not a picture' })).status, 400);
   await photo('b4', 0); await photo('b4', 1); assert.equal(readdirSync(incoming).length, 2);
   assert.equal((await s.post('/api/camera/discard?batch=b4')).status, 200); assert.equal(readdirSync(incoming).length, 0);
-  assert.equal(answerPrompt({ mode: 'single' }), ANSWER_PROMPT);
+  assert.equal(answerPrompt({ mode: 'single' }), ANSWER_PROMPT + REFERENCE_PROMPT);
   assert.ok(answerPrompt({ mode: 'camera' }).startsWith('这是同一次操作中用手机或平板拍摄的照片') && !answerPrompt({ mode: 'camera' }).includes('截图'), 'the model is told these are photos');
   p.ws.close();
 });

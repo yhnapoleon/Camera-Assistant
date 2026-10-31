@@ -62,7 +62,7 @@ async function call(url, options = {}) {
 
 if (process.argv.includes('--collect')) {
   const rounds = ['', '一面', '二面', '三面', '后端', '前端', '客户端', '测开', '算法岗', '大模型', 'Agent 开发', 'AI 应用开发', '服务端', 'C++', 'Go', 'Java', '秋招', '暑期', '日常实习'].map(w => `字节 ${w} 手撕`.replace('  ', ' '));
-  const queries = [...rounds, '字节 算法题 面经', '字节 面经 代码题', '抖音 面经 手撕', 'TikTok 面经 手撕', '飞书 面经 手撕', ...[...COMPANY_PROBLEMS.values()].map(p => `字节 手撕 ${p.title.replace(/\s*\/.*$/, '')}`)];
+  const queries = [...rounds, '字节 算法题 面经', '字节 面经 代码题', '抖音 面经 手撕', 'TikTok 面经 手撕', '飞书 面经 手撕', ...[...COMPANY_PROBLEMS.values()].filter(p => p.company === '字节' && PATTERNS[p.no]).map(p => `字节 手撕 ${p.title.replace(/\s*\/.*$/, '')}`)];
   for (const query of queries) for (const order of ['create', '']) {
     for (let page = 1; page <= 3; page++) {
       const data = (await call('https://gw-c.nowcoder.com/api/sparta/pc/search', { method: 'POST', body: JSON.stringify({ type: 'all', query, page, tag: [], order }) })).data;
@@ -96,6 +96,7 @@ const mine = pool.filter(p => perAuthor.get(p.author) < 6 && !paid.has(p.author)
 const show = process.argv.includes('--show') ? process.argv[process.argv.indexOf('--show') + 1] : '';
 console.log(`${since} 起的帖子 ${pool.length} 篇，最晚 ${pool.map(p => p.at).sort().at(-1)}；只谈字节、不是汇总号的 ${mine.length} 篇，账号 ${new Set(mine.map(p => p.author)).size} 个`);
 for (const problem of COMPANY_PROBLEMS.values()) {
+  if (problem.company !== '字节' || !PATTERNS[problem.no]) continue;
   const re = new RegExp(PATTERNS[problem.no].source, PATTERNS[problem.no].flags + 'g'), found = [];
   for (const p of mine) {
     const text = `${p.title}\n${p.full}`;

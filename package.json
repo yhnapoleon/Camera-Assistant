@@ -3,11 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js",
     "start:mouse": "node --env-file-if-exists=.env src/mouse-server.js",
     "test": "node --test"
   },
-  "dependencies": { "ws": "^8.18.3", "sharp": "^0.34.3", "tesseract.js": "^6.0.1" }
+  "dependencies": {
+    "@highlightjs/cdn-assets": "11.12.0",
+    "sharp": "^0.34.3",
+    "tesseract.js": "^6.0.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "linkedom": "0.18.14"
+  }
 }

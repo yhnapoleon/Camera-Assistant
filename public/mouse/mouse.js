@@ -25,6 +25,11 @@ const drafted = job => !!job?.insights?.some(i => i.draft === 'part' || i.draft 
 let view = 'list', currentId = null, detail = false, wantDetail = false, shownKey = '', listScroll = 0, selfBack = false;
 // A programming problem is read in two levels: 'insight' (problem list match and tags) first, then 'code'. Everything else is 'code' only.
 let level = 'code', lastLevel = 0;
+let lessonProblem = 0, lessonMode = 'leetcode';
+const lessonStages = ['insight', 'analysis', 'implementation', 'diagram', 'code'];
+const stageNames = { insight: '概览', analysis: '思路分析', implementation: '具体实现', diagram: '结构图解', code: '代码' };
+const hasLesson = job => !!(job?.hasLesson || job?.lesson);
+const openModal = () => document.querySelector?.('dialog[open]') || ($('settings').open ? $('settings') : null);
 let pitch = 25, scrollTarget = null, targetTimer, markTimer, lastFlip = 0;   // pitch: height of one text line in px
 let pointerType = matchMedia('(any-pointer: fine)').matches ? 'mouse' : 'touch', press = null, clickTimer = null, lastOpen = 0, lastTrigger = 0, lastRight = 0, sending = false, toastTimer, wakeLock;
 let lastPointerInput = null;
@@ -140,7 +145,7 @@ function apply(job, live) {
   const prev = jobs.get(job.id);
   if (prev && (job.rev || 0) < (prev.rev || 0)) return;
   // List entries arrive without the long texts; keep the copies that are already loaded.
-  if (prev && job.status === 'done') for (const key of ['answer', 'explanation']) if (job[key] === undefined && prev[key] !== undefined) job = { ...job, [key]: prev[key] };
+  if (prev && job.status === 'done') for (const key of ['answer', 'explanation', 'lesson']) if (job[key] === undefined && prev[key] !== undefined) job = { ...job, [key]: prev[key] };
   jobs.set(job.id, job);
   // The match with the problem list arrives after the code; say so when the reader has already gone on to the code.
   if (live && prev?.matchStatus === 'running' && job.matchStatus === 'done' && currentId === job.id && level === 'code') toast(`题单对照：${job.insights.map(i => matched(i.origin)).filter(Boolean).join('；')}`);
@@ -153,6 +158,7 @@ function show(next, id) {
   if (next === 'list' && view === 'list') return;
   view = next; currentId = next === 'answer' ? id : null; detail = wantDetail = false; shownKey = ''; scrollTarget = null;
   level = twoLevels(jobs.get(currentId)) ? 'insight' : 'code';
+  lessonProblem = 0; lessonMode = 'leetcode';
   $('listView').hidden = view !== 'list'; $('answerView').hidden = view !== 'answer';
   render(); scroller.scrollTop = view === 'list' ? listScroll : 0; track();
 }
@@ -162,6 +168,7 @@ function setLevel(next) { level = next; lastLevel = Date.now(); detail = wantDet
 function stepBack() {
   if (view !== 'answer') return false;
   if (detail) { hideDetail(); return true; }
+  if (hasLesson(jobs.get(currentId))) { const index = lessonStages.indexOf(level); if (index > 0) { setLevel(lessonStages[index - 1]); return true; } return false; }
   if (level === 'code' && twoLevels(jobs.get(currentId))) { setLevel('insight'); return true; }
   return false;
 }
@@ -173,7 +180,14 @@ function openJob(id) {
 function leaveAnswer() { selfBack = true; history.back(); }
 // The explanation is asked for only now, and kept with the record afterwards.
 function showDetail() {
+  if (hasLesson(jobs.get(currentId))) { setLevel('analysis'); return; }
   const job = jobs.get(currentId); if (view !== 'answer' || level !== 'code' || job?.status !== 'done') return;
+  detail = wantDetail = true;
+  if (job.explanation === undefined) { if (job.hasExplanation) load(job.id); else if (job.explainStatus !== 'running') requestExplain(job.id); }
+  render();
+}
+function showOrdinaryDetail() {
+  const job = jobs.get(currentId); if (!job?.lesson?.answer) return;
   detail = wantDetail = true;
   if (job.explanation === undefined) { if (job.hasExplanation) load(job.id); else if (job.explainStatus !== 'running') requestExplain(job.id); }
   render();
@@ -247,13 +261,15 @@ async function showImage(id, n, img, figure) {
 // Right button: one step back each time. Explanation -> code -> approach (programming problems) -> directory.
 function right() {
   const now = Date.now(); if (now - lastRight < 400) return; lastRight = now; note('右键');
-  if ($('settings').open) { $('settings').close(); return; }
+  const modal = openModal(); if (modal) { modal.close(); return; }
   if (view === 'answer' && !stepBack()) leaveAnswer();
 }
 const actions = {
   capture: () => trigger(),
   back: () => { if (view === 'answer' && !stepBack()) leaveAnswer(); },
-  code: () => setLevel('code'),
+  code: () => setLevel(hasLesson(jobs.get(currentId)) ? lessonStages[Math.min(4, lessonStages.indexOf(level) + 1)] : 'code'),
+  lesson: () => {},
+  retry: async () => { try { apply((await post(`/api/retry?id=${currentId}`)).job, false); watch(currentId); render(); } catch (e) { toast(e.message, true); } },
   detail: () => { if (detail) hideDetail(); else showDetail(); },
   settings: () => openSettings(),
   model: control => chooseModel(control.dataset.id),
@@ -262,7 +278,7 @@ const actions = {
 };
 // Buttons marked data-touch-only are for fingers. To the mouse they are part of the page, where the
 // left button always means click = capture, double click = explanation, long press = burst.
-function control(target, type) { const found = target.closest?.('[data-action]'); return found && !(type === 'mouse' && found.hasAttribute('data-touch-only')) ? found : null; }
+function control(target, type) { const found = target.closest?.('[data-action]'); return found && !(type === 'mouse' && found.hasAttribute('data-touch-only') && !hasLesson(jobs.get(currentId))) ? found : null; }
 // Some phone browsers deliver a mouse-like compatibility click after a real touch.
 // The initiating press identifies the input, rather than that final click's pointerType.
 function clickInput(event) {
@@ -288,7 +304,7 @@ function endPress(event, cancelled) {
   note('左键');
   const fresh = stamp => Date.now() - stamp < DOUBLE_MS + 100;
   // On the approach level the left button only goes on to the code; capturing starts from the code level.
-  if (view === 'answer' && level === 'insight') { if (!fresh(lastOpen)) setLevel('code'); return; }
+  if (view === 'answer' && level !== 'code') { if (!fresh(lastOpen) && !fresh(lastLevel)) actions.code(); return; }
   if (fresh(lastLevel)) return;   // second half of a double click that has just entered the code
   const second = clickTimer || fresh(lastOpen);   // the first click may have opened this record from the directory
   clearTimeout(clickTimer); clickTimer = null;
@@ -298,10 +314,10 @@ function endPress(event, cancelled) {
 }
 document.addEventListener('pointerdown', e => {
   const type = e.sourceCapabilities?.firesTouchEvents ? 'touch' : e.pointerType || 'mouse'; rememberInput(e, type);
-  if (!entered || $('settings').open || type !== 'mouse' || e.button !== 0 || control(e.target, type)) return;
+  if (!entered || openModal() || type !== 'mouse' || e.button !== 0 || control(e.target, type)) return;
   endPress(null, true);
   const p = press = { pointer: e.pointerId, burst: null };
-  if (!(view === 'answer' && level === 'insight')) p.timer = setTimeout(() => { if (press === p) startBurst(p); }, LONG_MS);   // no capturing from the approach level
+  if (!(view === 'answer' && level !== 'code')) p.timer = setTimeout(() => { if (press === p) startBurst(p); }, LONG_MS);
   try { document.documentElement.setPointerCapture(e.pointerId); } catch {}   // the release must arrive even outside the page
 }, true);
 document.addEventListener('touchstart', e => rememberInput(e, 'touch'), { capture: true, passive: true });
@@ -324,17 +340,19 @@ document.addEventListener('contextmenu', e => {
 document.addEventListener('click', e => {
   if (!entered || $('settings').open) return;
   const type = clickInput(e);
-  if (type !== 'mouse' && Date.now() < suppressTouchClickUntil) return;
+  if (type !== 'mouse' && Date.now() < suppressTouchClickUntil) { e.preventDefault?.(); e.stopImmediatePropagation?.(); return; }
   const found = control(e.target, type); if (!found) return;
-  note(type === 'mouse' ? '左键' : '触摸'); actions[found.dataset.action](found);
-});
+  note(type === 'mouse' ? '左键' : '触摸'); actions[found.dataset.action]?.(found);
+}, { capture: true });
 // Native touch panning is unreliable inside the 90-degree rotated overflow area.
 // Project screen movement onto the page's vertical axis; normal orientation stays native.
 scroller.addEventListener('touchstart', e => {
   touchScroll = null; suppressTouchClickUntil = 0;
   if (!entered || $('settings').open || !root.classList.contains('turned') || e.touches.length !== 1 || e.target.closest?.('button,input,select,textarea,a')) return;
   const finger = e.touches[0];
-  touchScroll = { id: finger.identifier, x: finger.clientX, top: scroller.scrollTop, flipped: root.classList.contains('flipped'), moved: false };
+  const diagram = e.target.closest?.('.diagram-viewport'), code = e.target.closest?.('.source-code');
+  const vertical = diagram || scroller, horizontal = diagram || code;
+  touchScroll = { id: finger.identifier, x: finger.clientX, y: finger.clientY, vertical, horizontal, top: vertical.scrollTop, left: horizontal?.scrollLeft || 0, flipped: root.classList.contains('flipped'), moved: false };
   scrollTarget = null; clearTimeout(targetTimer);
 }, { passive: true });
 scroller.addEventListener('touchmove', e => {
@@ -342,10 +360,13 @@ scroller.addEventListener('touchmove', e => {
   if (e.touches.length !== 1 || !root.classList.contains('turned') || document.getSelection?.()?.isCollapsed === false) { touchScroll = null; return; }
   const finger = e.touches[0]; if (finger.identifier !== touchScroll.id) return;
   const delta = (finger.clientX - touchScroll.x) * (touchScroll.flipped ? -1 : 1);
-  if (!touchScroll.moved && Math.abs(delta) < 8) return;
+  const across = (finger.clientY - touchScroll.y) * (touchScroll.flipped ? 1 : -1);
+  if (!touchScroll.moved && Math.abs(delta) < 8 && (!touchScroll.horizontal || Math.abs(across) < 8)) return;
   touchScroll.moved = true;
   if (e.cancelable) e.preventDefault();
-  scroller.scrollTop = Math.max(0, Math.min(Math.max(0, scroller.scrollHeight - scroller.clientHeight), touchScroll.top + delta));
+  const { vertical, horizontal } = touchScroll;
+  vertical.scrollTop = Math.max(0, Math.min(Math.max(0, vertical.scrollHeight - vertical.clientHeight), touchScroll.top + delta));
+  if (horizontal) horizontal.scrollLeft = Math.max(0, Math.min(Math.max(0, horizontal.scrollWidth - horizontal.clientWidth), touchScroll.left + across));
 }, { passive: false });
 function finishTouchScroll() {
   if (touchScroll?.moved) suppressTouchClickUntil = Date.now() + 500;
@@ -354,6 +375,7 @@ function finishTouchScroll() {
 scroller.addEventListener('touchend', finishTouchScroll, { passive: true });
 scroller.addEventListener('touchcancel', finishTouchScroll, { passive: true });
 $('app').addEventListener('wheel', e => {
+  if (e.target.closest?.('.source-code,.diagram-viewport')) return;
   note('滚轮');
   const turned = root.classList.contains('turned'); if (!e.deltaY || $('settings').open || !(view === 'answer' || turned)) return;   // the directory scrolls natively
   e.preventDefault();
@@ -362,7 +384,7 @@ $('app').addEventListener('wheel', e => {
 }, { passive: false });
 scroller.addEventListener('scroll', () => requestAnimationFrame(mark), { passive: true });
 addEventListener('resize', orient);
-document.addEventListener('keydown', e => { if (entered && e.key === 'Escape' && !$('settings').open) right(); });
+document.addEventListener('keydown', e => { if (entered && e.key === 'Escape' && !openModal()) right(); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') { endPress(null, true); return; }
   if (!entered) return;
@@ -416,7 +438,7 @@ function renderBar() {
   else busy.textContent = '正在发出截图指令…';
   const reading = view === 'answer', finger = pointerType !== 'mouse';
   // Reading with the mouse needs no buttons, so the bar gives its lines to the answer; trouble is still announced.
-  $('bar').hidden = reading && !finger;
+  $('bar').hidden = reading && !finger && !hasLesson(jobs.get(currentId));
   $('warnChip').hidden = !$('bar').hidden || online; $('warnChip').textContent = linked ? '截图端未连接' : '与电脑断开，正在重连…';
   // Which model answers the next capture: chosen here, on the directory, when there is more than one.
   // The buttons are updated in place, like the rows of the list, so that a click always lands on the one pressed.
@@ -428,6 +450,12 @@ function renderBar() {
   $('backButton').hidden = !reading || !finger; $('backButton').textContent = reading && !insight && twoLevels(job) ? '‹ 思路' : '‹ 目录';
   $('settingsButton').hidden = reading; $('codeButton').hidden = !insight || !finger;
   $('detailButton').hidden = !reading || !finger || insight || job?.status !== 'done'; $('detailButton').textContent = detail ? '收起' : '解析';
+  if (reading && hasLesson(job)) {
+    const index = lessonStages.indexOf(level);
+    $('backButton').hidden = false; $('backButton').textContent = index > 0 ? `‹ ${stageNames[lessonStages[index - 1]]}` : '‹ 目录';
+    $('codeButton').hidden = level === 'code'; $('codeButton').textContent = `下一步：${stageNames[lessonStages[Math.min(4, index + 1)]]}`;
+    $('detailButton').hidden = true;
+  } else $('codeButton').textContent = '看代码';
 }
 function renderList() {
   const box = $('jobs'), list = [...jobs.values()].sort((a, b) => b.seq - a.seq);
@@ -464,7 +492,7 @@ function detailSection(job) {
 }
 const RELATION = { same: '原题', variant: '变式', none: '不在题单' };
 // A problem a company asks that is not on LeetCode carries the company instead of a number.
-const sourced = origin => origin.company ? `${origin.company}手撕` : '';
+const sourced = origin => origin.company ? `${origin.company}${origin.kind || '手撕'}` : '';
 const matched = origin => origin ? `${RELATION[origin.relation]}${origin.problem ? ` ${origin.relation === 'none' ? '最接近 ' : ''}${origin.problem}${origin.company ? `（${sourced(origin)}）` : ''}` : ''}` : '';
 // Approach level of a programming problem: how it relates to the problem list, then category and approach tags.
 // Set large, two grid lines per row, to be taken in at a glance before going on to the code. The code is
@@ -495,7 +523,7 @@ function insightCards(job) {
 }
 function renderAnswer() {
   const job = jobs.get(currentId), box = $('answer'); if (!job) return;
-  const key = [job.id, job.rev, job.answer === undefined, job.explanation === undefined, detail, level].join(':');
+  const key = [job.id, job.rev, job.answer === undefined, job.explanation === undefined, job.lesson === undefined, detail, level, lessonProblem, lessonMode].join(':');
   if (key === shownKey) { for (const live of box.querySelectorAll('.live')) live.textContent = `${live.dataset.label} ${since(live.dataset.start)} 秒`; return; }
   shownKey = key;
   // One line: number and title on the left, the facts about this capture on the right.
@@ -506,7 +534,28 @@ function renderAnswer() {
   head.append(el('b', job.status === 'done' ? `#${job.seq} ${job.title || '答案'}` : `#${job.seq}`), el('span', facts.join(' · ')));
   box.replaceChildren(head);
   let tips = '右键：回目录　左键：截新图　长按：连拍';
-  if (level === 'insight' && twoLevels(job)) { box.append(insightCards(job)); tips = '左键：看代码　右键：回目录'; }
+  if (job.status === 'done' && hasLesson(job)) {
+    if (!job.lesson) { box.append(el('p', '正在载入学习内容…', 'note')); load(job.id); }
+    else {
+      box.append(window.LessonView.render(job.lesson, { stage: level, problemIndex: lessonProblem, mode: lessonMode }, {
+        navigate: setLevel,
+        problem: index => { lessonProblem = index; shownKey = ''; render(); scroller.scrollTop = 0; },
+        mode: mode => { lessonMode = mode; shownKey = ''; render(); },
+        copy: copyCode,
+        step: focusStep,
+        explain: showOrdinaryDetail,
+      }));
+      if (detail) box.append(detailSection(job));
+      if (level === 'insight') {
+        const item = job.insights?.[lessonProblem];
+        if (item?.origin) box.append(el('p', `题单对照：${matched(item.origin)}`, 'note'));
+        else if (job.matchStatus === 'running') box.append(ticking('正在对照题单…', job.matchStartedAt));
+        else if (job.matchStatus === 'failed') box.append(el('p', `题单对照没有完成：${job.matchError}`, 'note'));
+      }
+    }
+    tips = level === 'code' ? '代码区域可选中复制；空白处左键截新图，右键回图解' : '左键空白处：下一步　右键：上一步';
+  }
+  else if (level === 'insight' && twoLevels(job)) { box.append(insightCards(job), el('p', '这是旧版记录；重新截图可生成分步分析、图解和两种运行方案。', 'note')); tips = '左键：看代码　右键：回目录'; }
   else if (job.status === 'done') {
     const away = twoLevels(job) ? '回思路' : '回目录';
     if (job.answer === undefined) { box.append(el('p', '正在载入…', 'note')); load(job.id); }
@@ -514,13 +563,41 @@ function renderAnswer() {
     if (detail) box.append(detailSection(job));
     tips = detail ? `右键：收起解析，再按一次${away}` : `左键：截新图　双击：${drafted(job) ? '看还差什么' : '看解析'}　右键：${away}　长按：连拍`;
   }
-  else if (job.status === 'failed') box.append(el('p', '这一次没有完成', 'state'), el('p', job.error, 'error'));
+  else if (job.status === 'failed') {
+    box.append(el('p', '这一次没有完成', 'state'), el('p', job.error, 'error'));
+    if (job.frameCount) { const retryButton = el('button', '使用原图重试'); retryButton.dataset.action = 'retry'; box.append(retryButton); }
+  }
   else if (job.status === 'capturing' && job.mode === 'burst') box.append(el('p', '正在连拍…', 'state'), el('p', `已截 ${job.shots} 张，松开后一起解答`, 'note'));
   else box.append(el('p', job.status === 'capturing' ? '正在截图…' : '正在解答…', 'state'), ticking('已用', job.createdAt));
   box.append(el('p', tips, 'tips'));
   if (detail && wantDetail) { toDetail(); if (job.explanation !== undefined) wantDetail = false; }
 }
 function render() { if (!entered) return; renderBar(); fit(); if (view === 'list') renderList(); else renderAnswer(); track(); }
+
+function focusStep(id) {
+  setLevel('code');
+  requestAnimationFrame(() => {
+    const block = [...$('answer').querySelectorAll('[data-code-step]')].find(node => node.dataset.codeStep === id);
+    if (!block) return;
+    for (const node of $('answer').querySelectorAll('.step-focus')) node.classList.remove('step-focus');
+    block.classList.add('step-focus');
+    let top = 0, node = block;
+    while (node && node !== scroller) { top += node.offsetTop || 0; node = node.offsetParent; }
+    scroller.scrollTop = top; track();
+  });
+}
+
+async function copyCode(text) {
+  try { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); toast('已复制'); return; } } catch {}
+  const dialog = document.createElement('dialog'), field = el('textarea', undefined, 'copy-fallback'), close = el('button', '关闭');
+  dialog.dataset.action = 'lesson';
+  field.value = text; field.readOnly = true; field.setAttribute('aria-label', '待复制内容');
+  dialog.append(el('p', '内容已选中，可长按复制或按 Ctrl+C。'), field, close); document.body.append(dialog);
+  close.onclick = () => { dialog.close(); dialog.remove(); };
+  dialog.addEventListener('close', () => dialog.remove());
+  dialog.addEventListener('cancel', () => dialog.remove()); dialog.showModal(); field.focus(); field.select();
+  try { if (document.execCommand('copy')) { dialog.close(); dialog.remove(); toast('已复制'); } } catch {}
+}
 
 async function openSettings() {
   const dialog = $('settings'); if (dialog.open) return;

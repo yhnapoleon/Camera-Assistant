@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { COMPANY_PROBLEMS, PROBLEMS } from './problem-list.js';
+import { parseLesson } from './lesson.js';
 
 const active = j => ['capturing', 'analyzing'].includes(j.status);
 const now = () => new Date().toISOString();
@@ -9,14 +10,17 @@ const plain = s => String(s || '').replace(/^[#>\s*-]+/, '').replace(/[*`]/g, ''
 const snippet = text => String(text || '').split(/\r?\n/).map(plain).filter(Boolean).join(' ').slice(0, 90);
 
 // The model is asked to open with "标题：…" for the directory page; fall back to its first line when it does not.
-export function splitAnswer(text) {
+export function splitAnswer(text, { requireLesson = false } = {}) {
+  const lesson = parseLesson(text); if (lesson) return lesson;
   const lines = String(text || '').trim().split(/\r?\n/);
   const first = lines.findIndex(l => l.trim());
   if (first < 0) return { title: '', answer: '' };
   const titled = lines[first].match(/^[#*\s]*标题\**\s*[:：]\s*(.+)$/);
   const rest = lines.slice(first + 1).join('\n').trim();
   const base = titled && rest ? { title: plain(titled[1]).slice(0, 60), answer: rest } : { title: plain(lines[first]).slice(0, 60), answer: lines.join('\n').trim() };
-  return { ...base, ...codeAnswer(base.answer) };
+  const result = { ...base, ...codeAnswer(base.answer) };
+  if (requireLesson && (result.kind === 'code' || /类型\s*[:：]\s*代码题|```(?:python|py|cpp|c\+\+|java|javascript|typescript|go|rust|csharp)\b/i.test(base.answer))) throw Error('学习内容不完整：编程题未返回新版分析、图解及双模式代码。请重试生成。');
+  return result;
 }
 
 const tags = value => plain(value).split(/[、，,；;/|｜]+/).map(s => s.trim()).filter(Boolean).slice(0, 6);
@@ -52,13 +56,13 @@ export function parseMatch(text) {
     if (m[1] === '改动') { change = plain(m[2]).replace(/^[“"「]|[”"」。.]$/g, ''); continue; }
     const id = m[2].match(/\bE\d+\b/i)?.[0].toUpperCase(), company = COMPANY_PROBLEMS.get(id), listed = id ? company : PROBLEMS.get(m[2].match(/\d+/)?.[0]);
     const relation = !listed ? 'none' : /^不用改/.test(change) ? 'same' : /^要改/.test(change) ? 'variant' : 'none';
-    found.push({ relation, problem: company ? company.title : listed ? `${listed.no}. ${listed.title}` : '', hot: !!listed?.hot, note: relation === 'variant' ? change.replace(/^要改[”"」]?\s*[:：，,]?\s*/, '') : '', ...company && { company: company.company } });
+    found.push({ relation, problem: company ? company.title : listed ? `${listed.no}. ${listed.title}` : '', hot: !!listed?.hot, note: relation === 'variant' ? change.replace(/^要改[”"」]?\s*[:：，,]?\s*/, '') : '', ...company && { company: company.company }, ...company?.kind && { kind: company.kind } });
     change = '';
   }
   return found;
 }
 const relation = { same: '原题', variant: '变式', none: '不在题单' };
-const verdict = o => o ? [`${relation[o.relation]}${o.relation !== 'none' && o.problem ? ` ${o.problem}${o.company ? `（${o.company}手撕）` : ''}` : ''}`] : [];
+const verdict = o => o ? [`${relation[o.relation]}${o.relation !== 'none' && o.problem ? ` ${o.problem}${o.company ? `（${o.company}${o.kind || '手撕'}）` : ''}` : ''}`] : [];
 const brief = j => j.insights?.length ? j.insights.map(i => [...verdict(i.origin), ...i.categories, ...i.approaches].join(' · ')).join('；').slice(0, 120) : snippet(j.answer);
 
 // a, b: square greyscale thumbnails of two screenshots. Compared in 8×8 blocks, so a blinking caret or a
@@ -80,8 +84,9 @@ export function sameFrame(a, b, limit = 8) {
 // Photos sent from the camera page skip capturing: submit() makes a job of them that starts at analyzing.
 // engine() names the model chosen at that moment; a job keeps it, so everything asked about it later goes to the same one.
 export class JobStore extends EventEmitter {
-  constructor({ analyze, match, explain, requestShot = () => {}, prompt = () => '', engine = () => undefined, stateFile, concurrency = 2, captureTimeout = 12000, lateWindow = 60000, interval = 500, maxFrames = 12, holdTimeout = 3000, maxHold = 60000 } = {}) {
+  constructor({ analyze, match, explain, requestShot = () => {}, prompt = () => '', engine = () => undefined, stateFile, requireLesson = false, concurrency = 2, captureTimeout = 12000, lateWindow = 60000, interval = 500, maxFrames = 12, holdTimeout = 3000, maxHold = 60000 } = {}) {
     super(); Object.assign(this, { analyze, matcher: match, explainer: explain, requestShot, prompt, engine, stateFile, concurrency, captureTimeout, lateWindow, interval, maxFrames, holdTimeout, maxHold });
+    this.requireLesson = requireLesson;
     this.state = { seq: 0, jobs: [] }; this.running = new Map(); this.explaining = new Map();
     this.live = new Map();   // capturing job id -> { holding, heldAt, shot, shotAt, last, error, timeout, next, guard }
     this.shots = new Map();  // screenshot request id -> job id
@@ -108,8 +113,15 @@ export class JobStore extends EventEmitter {
   get capturing() { return this.state.jobs.find(j => j.status === 'capturing'); }
   get pending() { return this.state.jobs.filter(active).length; }
   // List entries leave out the long texts; the page loads them when a record is opened.
-  summary(j) { const { answer, explanation, ...rest } = this.detail(j); return rest; }
-  detail(j) { const { frames, systemPrompt, ...rest } = j; return { ...rest, frameCount: frames.length, hasExplanation: j.explanation !== undefined, snippet: brief(j) }; }
+  summary(j) { const { answer, explanation, lesson, ...rest } = this.detail(j); return rest; }
+  detail(j) { const { frames, systemPrompt, ...rest } = j; return { ...rest, frameCount: frames.length, hasExplanation: j.explanation !== undefined, hasLesson: !!j.lesson, snippet: brief(j) }; }
+
+  retry(id) {
+    const j = this.job(id);
+    if (!j || j.status !== 'failed' || !j.frames.length || this.running.has(id)) throw Error('只有已失败且保留图片的任务可以重试');
+    for (const key of ['error', 'finishedAt', 'answer', 'explanation', 'lesson', 'insights', 'kind', 'title', 'matchStatus', 'matchError', 'matchStartedAt', 'timedOut']) delete j[key];
+    j.status = 'analyzing'; this.changed(j); this.pump(); return j;
+  }
 
   create(mode = 'single') {
     const job = { id: randomUUID(), seq: ++this.state.seq, mode, status: 'capturing', engine: this.engine(), systemPrompt: this.prompt() || '', createdAt: now(), frames: [], shots: 0 };
@@ -190,7 +202,7 @@ export class JobStore extends EventEmitter {
     const controller = new AbortController(), signal = controller.signal;
     const done = (async () => {
       try {
-        const parsed = splitAnswer(await this.analyze(j, { signal }));
+        const parsed = splitAnswer(await this.analyze(j, { signal }), { requireLesson: this.requireLesson });
         if (!parsed.answer) throw Error('模型未返回文字');
         if (j.status !== 'analyzing') return;
         Object.assign(j, { status: 'done', ...parsed, finishedAt: now() });

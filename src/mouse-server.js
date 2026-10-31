@@ -12,10 +12,14 @@ import { COMPANY_PROBLEM_LIST, PROBLEM_LIST } from './problem-list.js';
 import { ANALYZERS, EFFORTS, createProvider } from './providers.js';
 import { RemoteSource } from './remote-source.js';
 import { createVoiceRoutes } from './voice.js';
+import { LESSON_PROMPT } from './lesson.js';
+import { demoLesson } from './lesson-demo.js';
+import { REFERENCE_PROMPT } from './reference-problems.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const staticFiles = { '/': ['index.html', 'text/html'], '/mouse.js': ['mouse.js', 'text/javascript'], '/mouse.css': ['mouse.css', 'text/css'], '/camera': ['camera.html', 'text/html'], '/camera.js': ['camera.js', 'text/javascript'], '/camera.css': ['camera.css', 'text/css'] };
 Object.assign(staticFiles, { '/voice': ['voice.html', 'text/html'], '/voice.js': ['voice.js', 'text/javascript'], '/voice-recorder.js': ['voice-recorder.js', 'text/javascript'], '/voice.css': ['voice.css', 'text/css'] });
+Object.assign(staticFiles, { '/lesson-view.js': ['lesson-view.js', 'text/javascript'], '/lesson.css': ['lesson.css', 'text/css'] });
 const json = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(body)); };
 const validId = s => typeof s === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(s);
 const pause = ms => new Promise(r => setTimeout(r, ms));
@@ -59,8 +63,8 @@ export const ANSWER_PROMPT = `${SCREENSHOTS}如果其中有题目，直接给出
 6. 多张截图的内容有重叠或重复时，每道题只回答一次，按题号顺序排列；被截断的题目结合相邻截图补全后再作答。
 7. 看不清或缺少条件的题目写“题号. 无法确定”并用几个字说明原因，不要猜测。
 8. 截图中没有题目时，第一行写“标题：未发现题目”，正文只写“未发现题目”。
-9. ${PHONE_STYLE}`;
-export const answerPrompt = job => worded(ANSWER_PROMPT, job);
+9. ${PHONE_STYLE}${LESSON_PROMPT}`;
+export const answerPrompt = job => worded(ANSWER_PROMPT, job) + REFERENCE_PROMPT;
 // Asked after a programming problem has been answered, without the screenshots: the comparison is made on what
 // the model itself wrote down as the substance of the problem and on its finished code, not on the wording or the
 // story of the problem. It is asked whether the listed solution would have to change, not for a label: see parseMatch.
@@ -75,7 +79,7 @@ ${job.insights.map(solved).join('\n\n')}
 
 ${job.answer}
 </解答>
-请判断每道题与文末题单的关系。题单分两部分：力扣题只列了题号和题名，这些题你都熟悉；企业手撕题是公司面试里要求手写的题，不在力扣题那一部分里，你不一定见过，每道题后面写了它的题意，以写出的题意为准，不要只凭题名判断。要比较的是题目的实质和解法，不是题名、故事背景或个别关键词。
+请判断每道题与文末题单的关系。题单分两部分：力扣题只列了题号和题名，这些题你都熟悉；企业题包含面试手撕题和用户录入的笔试题，不在力扣题那一部分里，你不一定见过，每道题后面写了它的题意，以写出的题意为准，不要只凭题名判断。要比较的是题目的实质和解法，不是题名、故事背景或个别关键词。
 每道题依次输出四行，每行以给定的词和冒号开头：
 候选：题单中最可能与这道题是同一道题或同一类题的题号，最多 3 个，用顿号分隔；一个都没有就写“无”。企业手撕题的题号是字母 E 加数字，照原样写。
 比较：拿最接近的那个候选，对比要求输出的内容、限制条件和主要解法，写出相同和不同之处，不超过 50 个字。
@@ -86,7 +90,7 @@ ${job.answer}
 结论：最接近的那个候选的题号，也就是拿它的标准解法来解这道题、要改的地方最少的那个；没有候选就写“无”。只有一道企业手撕题和一道力扣题都“不用改”、分不出远近时，才优先写企业手撕题的题号。
 题号只能写题单里出现的题号。有多道题时，每道题先写一行“题号：N”，再写这四行。除这些行以外不要输出别的内容。
 
-企业手撕题（题号 题名｜出题公司｜题意）：
+企业手撕题与笔试题（题号 题名｜出题公司｜题意）：
 ${COMPANY_PROBLEM_LIST}
 
 力扣题（分组：题号 题名）：
@@ -96,7 +100,7 @@ const DRAFT = { part: '部分', full: '较完整' };
 const drafts = job => (job.insights || []).filter(i => DRAFT[i.draft]).map(i => `${i.no ? `第 ${i.no} 题` : ''}${DRAFT[i.draft]}`).join('，');
 // For a programming problem the user had already written, the explanation is not a walk through the solution:
 // it says what their code still lacks and names each place to change, with the reason.
-export const explainPrompt = job => `${SCREENSHOTS}此前已经给出下面的答案：
+export const explainPrompt = job => job.lesson?.answer ? `${SCREENSHOTS}这是同一批题目中普通题的已有答案：\n${job.lesson.answer}\n只解释这些普通题，按题号给出答案、关键依据和必要步骤；不要重复编程题的代码或学习内容。发现错误请明确更正；缺少条件时说明，不能猜测。${PHONE_STYLE}` : `${SCREENSHOTS}此前已经给出下面的答案：
 <答案>
 ${job.answer}
 </答案>
@@ -129,16 +133,12 @@ async function demoAnswer(job) {
   // Every third capture is a set of plain questions, the others a programming problem with its approach level.
   // The approach lines follow the code, as the real prompt asks.
   if (job.seq % 3 === 0) return `标题：演示回答 ${job.seq}（未调用模型）\n\n1. B．演示选项\n2. 42 km\n3. C．演示选项\n本次用到 ${job.frames.length} 张截图。`;
-  // Of the programming problems, every other one stands for code the user had already written: it carries the
-  // "改：" and "补：" comments, and its explanation is the list of places to change.
-  const drafted = job.seq % 2 === 0;
-  const changes = drafted ? ['    // 改：演示用的改动说明，原来的循环少走了最后一步', '    for (int i = 0; i <= itemCount; i++) total += i;', '    // 补：演示用的补充说明，输入为空时直接返回'] : [];
-  const code = ['#include <bits/stdc++.h>', 'using namespace std;', 'int main() {', ...changes, ...Array.from({ length: 34 - changes.length }, (_, i) => `    cout << "演示代码第 ${i + 4 + changes.length} 行，检查每屏行数和滚轮翻页" << endl;`), '    return 0;', '}'];
-  return `标题：演示代码题 ${job.seq}（未调用模型）\n\n类型：代码题\n已有代码：${drafted ? '较完整' : '无'}\n代码：\n\`\`\`cpp\n${code.join('\n')}\n\`\`\`\n题意：演示用的题意，设计一个容量按字节计算的缓存\n分类：链表、哈希表、设计\n思路：哈希表 + 双向链表、哨兵节点、分类讨论`;
+  return JSON.stringify(demoLesson());
 }
 // Of the programming problems, one in two is matched with a company problem, the other with a LeetCode problem.
 async function demoMatch(job) {
   await pause(2500);
+  if (job.lesson) return '候选：1\n比较：两数之和的哈希查找解法相同\n改动：不用改\n结论：1';
   if (job.seq % 3 === 1) return '候选：E1、E7\n比较：演示用的比较，合并规则相同\n改动：不用改\n结论：E1';
   return '候选：146\n比较：演示用的比较，淘汰规则相同，容量的算法不同\n改动：要改：演示用的差异说明，容量改为按字节计算\n结论：146';
 }
@@ -211,7 +211,7 @@ export function createMouseApp(config = {}) {
   // Every screenshot is its own single-shot batch for the agent; a long press is a series of them.
   const requestShot = shot => source.push({ type: 'capture', batch: { id: shot, mode: 'single' } });
   const maxFrames = config.maxFrames || 12;
-  const store = new JobStore({ analyze, match, explain, requestShot, prompt: readPrompt, engine: () => engine.id, stateFile: path.join(dataDir, 'state.json'), concurrency: config.concurrency || 2, captureTimeout: config.captureTimeout || 12000, interval: config.interval || 500, maxFrames, holdTimeout: config.holdTimeout || 3000 });
+  const store = new JobStore({ analyze, match, explain, requestShot, prompt: readPrompt, engine: () => engine.id, stateFile: path.join(dataDir, 'state.json'), requireLesson: config.requireLesson !== false, concurrency: config.concurrency || 2, captureTimeout: config.captureTimeout || 12000, interval: config.interval || 500, maxFrames, holdTimeout: config.holdTimeout || 3000 });
   // Photos from the camera page wait here, batch by batch, until a batch is submitted and becomes one job.
   // What is left behind (a closed page, a restart) is removed after a while, or at the next start.
   const incomingDir = path.join(dataDir, 'incoming'); rmSync(incomingDir, { recursive: true, force: true }); mkdirSync(incomingDir, { recursive: true });
@@ -243,6 +243,10 @@ export function createMouseApp(config = {}) {
     res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'${wsHost}; frame-ancestors 'none'`);
     try {
       const url = new URL(req.url, 'http://localhost'), ip = req.socket.remoteAddress;
+      if (req.method === 'GET' && url.pathname === '/highlight.min.js') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
+        return res.end(readFileSync(path.join(root, 'node_modules', '@highlightjs', 'cdn-assets', 'highlight.min.js')));
+      }
       if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return json(res, 403, { error: '只接受同源请求' });
       if (req.method === 'GET' && url.pathname === '/phone-ca.crt' && phoneCa) {
         res.writeHead(200, { 'Content-Type': 'application/x-x509-ca-cert', 'Content-Disposition': 'attachment; filename="shiyue-phone-ca.crt"' });
@@ -260,6 +264,10 @@ export function createMouseApp(config = {}) {
 
       // Phone page
       if (get && url.pathname === '/api/state') return json(res, 200, snapshot());
+      if (post && url.pathname === '/api/retry') {
+        try { return json(res, 200, { job: store.detail(store.retry(id)) }); }
+        catch (error) { return json(res, 409, { error: error.message }); }
+      }
       if (post && url.pathname === '/api/capture') {
         const text = (await body(req, 2000)).toString(), mode = text && JSON.parse(text).mode === 'burst' ? 'burst' : 'single';
         if (!source.online) return json(res, 409, { error: '截图端未连接：请在被截图的电脑上启动采集器' });
@@ -434,3 +442,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     for (const address of addresses) console.log(`手机浏览器打开 ${scheme}://${address}:${port} 并输入配对码；截图端地址填 ${scheme}://${address}:${port}；拍照用的手机或平板打开 ${scheme}://${address}:${port}/camera`);
   });
 }
+

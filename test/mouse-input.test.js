@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
+test('problem sources distinguish Huawei written exams from existing interview problems', () => {
+  const p = page();
+  assert.equal(p.value("sourced({company:'华为',kind:'笔试'})"), '华为笔试');
+  assert.equal(p.value("sourced({company:'字节'})"), '字节手撕');
+});
+
 // Run the real page handlers without a browser or model calls. Only DOM rendering is stubbed.
 function page() {
   const handlers = new Map(), elements = new Map();
@@ -28,7 +34,7 @@ function page() {
   vm.runInContext(`
     render = () => {}; track = () => {}; entered = true;
     view = 'answer'; level = 'insight'; currentId = 'code-job';
-    jobs.set(currentId, { status: 'done', kind: 'code', insights: [{}] });
+    jobs.set(currentId, { id: currentId, status: 'done', kind: 'code', insights: [{}] });
     globalThis.captureCount = 0; trigger = () => { captureCount++; };
   `, context);
   const button = element('codeButton'); button.dataset.action = 'code'; button.touchOnly = true;
@@ -113,4 +119,66 @@ test('a fresh button tap immediately after scrolling remains usable', () => {
   swipe(p, [100, 100], [160, 100]);
   p.fire('pointerdown', { pointerType: 'touch' }); p.fire('pointerup', { pointerType: 'touch' }); p.fire('click', { pointerType: 'mouse' });
   assert.equal(p.value('level'), 'code');
+});
+
+test('new lessons advance through analysis, implementation and diagram before code; back reverses each stage', () => {
+  const p = page(); p.value("jobs.get(currentId).hasLesson = true");
+  const blank = { closest: () => null };
+  for (const expected of ['analysis', 'implementation', 'diagram', 'code']) {
+    p.value('lastLevel = 0');
+    p.fire('pointerdown', { target: blank, pointerType: 'mouse' });
+    p.fire('pointerup', { target: blank, pointerType: 'mouse' });
+    assert.equal(p.value('level'), expected);
+    assert.equal(p.value('captureCount'), 0);
+  }
+  for (const expected of ['diagram', 'implementation', 'analysis', 'insight']) {
+    assert.equal(p.value('stepBack()'), true); assert.equal(p.value('level'), expected);
+  }
+  assert.equal(p.value('stepBack()'), false);
+});
+
+test('code selection and lesson controls never start capture for mouse presses', () => {
+  const p = page(); p.value("jobs.get(currentId).hasLesson = true; level = 'code'");
+  p.button.dataset.action = 'lesson'; p.button.touchOnly = false;
+  p.fire('pointerdown', { pointerType: 'mouse' }); p.fire('pointerup', { pointerType: 'mouse' }); p.fire('click', { pointerType: 'mouse' });
+  assert.equal(p.value('press'), null); assert.equal(p.value('captureCount'), 0);
+});
+
+test('rotated diagram gestures pan the inner diagram instead of stealing the outer page scroll', () => {
+  const p = page(); p.element('root').classList.toggle('turned', true);
+  const graph = { scrollTop: 20, scrollLeft: 30, scrollHeight: 1000, clientHeight: 200, scrollWidth: 900, clientWidth: 400 };
+  const target = { closest: selector => selector === '.diagram-viewport' ? graph : null };
+  p.fire('scroll:touchstart', { target, touches: [{ identifier: 1, clientX: 100, clientY: 100 }] });
+  p.fire('scroll:touchmove', { target, touches: [{ identifier: 1, clientX: 160, clientY: 60 }], cancelable: true, preventDefault() {} });
+  assert.equal(graph.scrollTop, 80); assert.equal(graph.scrollLeft, 70);
+  assert.equal(p.element('scroll').scrollTop, 100);
+  p.fire('scroll:touchend', { target });
+  let stopped = false;
+  p.fire('click', { target, pointerType: 'touch', preventDefault() {}, stopImmediatePropagation() { stopped = true; } });
+  assert.equal(stopped, true, 'suppress compatibility clicks before SVG/renderer click handlers');
+});
+
+test('reverse-rotated source gestures can pan long code lines while vertical swipes move the reader', () => {
+  const p = page(); p.element('root').classList.toggle('turned', true); p.element('root').classList.toggle('flipped', true);
+  const source = { scrollLeft: 20, scrollWidth: 1000, clientWidth: 400 };
+  const target = { closest: selector => selector === '.source-code' ? source : null };
+  p.fire('scroll:touchstart', { target, touches: [{ identifier: 1, clientX: 100, clientY: 100 }] });
+  p.fire('scroll:touchmove', { target, touches: [{ identifier: 1, clientX: 60, clientY: 150 }], cancelable: true, preventDefault() {} });
+  assert.equal(source.scrollLeft, 70); assert.equal(p.element('scroll').scrollTop, 140);
+});
+
+test('open copy dialogs block screenshot gestures and right-click closes the dialog first', () => {
+  const p = page(); p.value("level = 'code'; globalThis.modal = {open:true, close(){this.open=false}}; document.querySelector = () => modal.open ? modal : null");
+  const target = { closest: () => null };
+  p.fire('pointerdown', { target, pointerType: 'mouse' });
+  assert.equal(p.value('press'), null);
+  p.value('right()'); assert.equal(p.value('modal.open'), false); assert.equal(p.value('level'), 'code');
+});
+
+test('mixed lessons can request ordinary explanations without leaving their overview', () => {
+  const p = page();
+  p.value("jobs.get(currentId).lesson = {answer:'2. B'}; globalThis.explanationRequested = ''; requestExplain = id => { explanationRequested = id; }");
+  assert.equal(p.value('typeof showOrdinaryDetail'), 'function');
+  p.value('showOrdinaryDetail()');
+  assert.equal(p.value('explanationRequested'), 'code-job'); assert.equal(p.value('detail'), true); assert.equal(p.value('level'), 'insight');
 });
